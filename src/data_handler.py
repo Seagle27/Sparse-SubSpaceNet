@@ -68,10 +68,9 @@ def create_dataset(
     """
     time_series, labels, sources_num = [], [], []
 
+
     for _ in tqdm(range(samples_size), desc="Creating Dataset"):
-        M = samples_model.params.M
-        if M is None:
-            M = np.random.randint(2, samples_model.params.N-1)
+        M = resolve_param(samples_model.params.M)
         # Samples model creation
         samples_model.set_doa(true_doa, M)
         if samples_model.params.field_type.lower().endswith("near"):
@@ -174,10 +173,7 @@ def set_dataset_filename(system_model_params: SystemModelParams, samples_size: f
     --------
         str: Suffix dataset filename
     """
-    if system_model_params.M is None:
-        M = "rand"
-    else:
-        M = system_model_params.M
+    M = system_model_params.M
     suffix_filename = (
             f"_{system_model_params.field_type}_field_"
             f"{system_model_params.signal_type}_"

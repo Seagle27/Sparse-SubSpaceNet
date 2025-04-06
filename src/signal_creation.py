@@ -15,7 +15,7 @@ This class is used for defining the samples model.
 # Imports
 import numpy as np
 from src.system_model import SystemModel, SystemModelParams
-from src.utils import D2R
+from src.utils import D2R, resolve_param
 from src.read_array import load_arrays_from_txt
 
 class Samples(SystemModel):
@@ -35,7 +35,7 @@ class Samples(SystemModel):
         samples_creation(noise_mean: float = 0, noise_variance: float = 1, signal_mean: float = 0,
             signal_variance: float = 1): Creates samples based on the specified mode and parameters.
         noise_creation(noise_mean, noise_variance): Creates noise based on the specified mean and variance.
-        signal_creation(signal_mean=0, signal_variance=1, SNR=10): Creates signals based on the specified mode and parameters.
+        signal_creation(source_number, signal_mean=0, signal_variance=1): Creates signals based on the specified mode and parameters.
     """
 
     def __init__(self, system_model_params: SystemModelParams, use_real_antenna_pattern: bool = False):
@@ -63,7 +63,7 @@ class Samples(SystemModel):
 
         """
 
-        def create_doa_with_gap(gap: float, M: int, doa_range=(-60, 60)):
+        def create_doa_with_gap(gap: float, M: int, doa_range=(-70, 70)):
             """
             Create M DOA values in the given range (in degrees) such that the difference
             between consecutive values is at least 'gap' (in degrees).
@@ -101,7 +101,7 @@ class Samples(SystemModel):
 
         if doa == None:
             # Generate angels with gap greater than 0.2 rad (nominal case)
-            self.doa = np.array(create_doa_with_gap(gap=10, M=M)) * D2R
+            self.doa = np.array(create_doa_with_gap(gap=5, M=M)) * D2R
         else:
             # Generate
             self.doa = np.array(doa) * D2R
@@ -169,7 +169,7 @@ class Samples(SystemModel):
 
         """
         # Generate signal matrix
-        signal = self.signal_creation(signal_mean, signal_variance, source_number=source_number)
+        signal = self.signal_creation(source_number, signal_mean, signal_variance)
         # Generate noise matrix
         noise = self.noise_creation(noise_mean, noise_variance)
         # Generate Narrowband samples
@@ -251,7 +251,7 @@ class Samples(SystemModel):
                 f"Samples.noise_creation: signal type {self.params.signal_type} is not defined"
             )
 
-    def signal_creation(self, signal_mean: float = 0, signal_variance: float = 1, source_number: int = None):
+    def signal_creation(self, source_number: int, signal_mean: float = 0, signal_variance: float = 1):
         """
         Creates signals based on the specified signal nature and parameters.
 
@@ -270,7 +270,7 @@ class Samples(SystemModel):
             Exception: If the signal nature is not defined.
         """
         M = source_number
-        amplitude = 10 ** (self.params.snr / 10)
+        amplitude = 10 ** (resolve_param(self.params.snr) / 10)
         # NarrowBand signal creation
         if self.params.signal_type == "NarrowBand":
             if self.params.signal_nature == "non-coherent":
@@ -308,9 +308,9 @@ class Samples(SystemModel):
             if self.params.signal_nature == "non-coherent":
                 # create M non-coherent signals
                 signal = np.zeros(
-                    (self.params.M, len(self.time_axis["Broadband"]))
-                ) + 1j * np.zeros((self.params.M, len(self.time_axis["Broadband"])))
-                for i in range(self.params.M):
+                    (M, len(self.time_axis["Broadband"]))
+                ) + 1j * np.zeros((M, len(self.time_axis["Broadband"])))
+                for i in range(M):
                     for j in range(num_sub_carriers):
                         sig_amp = (
                             amplitude
@@ -349,7 +349,7 @@ class Samples(SystemModel):
                         / num_sub_carriers
                     )
                 signal *= 1 / num_sub_carriers
-                return np.tile(np.fft.fft(signal), (self.params.M, 1))
+                return np.tile(np.fft.fft(signal), (M, 1))
             else:
                 raise Exception(
                     f"signal nature {self.params.signal_nature} is not defined"

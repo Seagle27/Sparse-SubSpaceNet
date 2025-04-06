@@ -65,10 +65,8 @@ class MUSIC(SubspaceMethod):
             (self.estimation_params == "range") - torch.Tensor with the predicted ranges
             (self.estimation_params == "angle, range") - tuple, each one of the elements is torch.Tensor for the predicted param.
         """
-        if self.system_model.params.M is not None:
-            M = self.system_model.params.M
-        else:
-            M = number_of_sources
+
+        M = number_of_sources
         # single param estimation: the search grid should be updated for each batch, else, it's the same search grid.
         if self.system_model.params.field_type.startswith("Near") and self.estimation_params == "range":
             if known_angles.shape[-1] == 1:

@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from typing import Union, Optional, Dict, Any
 from omegaconf import OmegaConf
 
 
@@ -17,19 +17,23 @@ class SimulationCommands:
 
 @dataclass
 class SystemModelParams:
-    N: int              # Number of Antennas
-    M: int              # Number of targets
-    T: int              # Snapshots
-    snr: float          # in dB
-    field_type: str     # ['Far', 'Near']
-    signal_nature: str  # ['coherent', 'non-coherent']
-    array_form: str     # ['ula', 'mra-4', 'mra-5', 'mra-6', 'mra-7', 'mra-8']
+    N: int                                      # Number of Antennas
+    M: Any                                      # Number of targets
+    T: int                                      # Snapshots
+    snr: Any                                    # in dB
+    field_type: str                             # ['Far', 'Near']
+    signal_nature: str                          # ['coherent', 'non-coherent']
+    array_form: str                             # ['ula', 'mra-4', 'mra-5', 'mra-6', 'mra-7', 'mra-8']
     signal_type: str = "NarrowBand"
     eta: float = 0.0
     bias: float = 0.0
     sv_noise_var: float = 0.0
     freq_values: list = field(default_factory=lambda: [0, 500])
     antenna_pattern: bool = False
+
+    def __post_init__(self):
+        self.M = normalize_range_param(self.M)
+        self.snr = normalize_range_param(self.snr)
 
 @dataclass
 class TrainingParams:
@@ -55,9 +59,9 @@ class TrainingParams:
 class EvaluationParams:
     criterion: str = "rmspe"
     balance_factor: float = 1.0
-    models: Dict[str, Dict[str, Any]] = field(default_factory=dict)
-    augmented_methods: list = field(default_factory=list)
-    subspace_methods: list = field(default_factory=list)
+    models: Optional[Dict[str, Dict[str, Any]]] = field(default_factory=dict)
+    augmented_methods: Optional[list] = field(default_factory=list)
+    subspace_methods: Optional[list] = field(default_factory=list)
 
 @dataclass
 class ModelConfig:
@@ -79,3 +83,26 @@ def load_simulation_config(path: str) -> SimulationConfig:
     yaml_cfg = OmegaConf.load(path)
     cfg = OmegaConf.merge(base, yaml_cfg)
     return OmegaConf.to_object(cfg)  # Convert to regular nested dataclasses
+
+
+def normalize_range_param(param: Union[int, float, list]) -> Union[int, float, tuple]:
+    """
+    Normalize a parameter that can be either a scalar or a range (list of two values).
+
+    Args:
+        param: A scalar value (int or float) or a list of two values representing a range.
+
+    Returns:
+        A scalar or a tuple representing a valid range.
+
+    Raises:
+        ValueError if the input is an invalid range.
+    """
+    if isinstance(param, list):
+        if len(param) != 2:
+            raise ValueError("Expected a list of two values to represent a range.")
+        return tuple(param)
+    elif isinstance(param, (int, float)):
+        return param
+    else:
+        raise TypeError("Expected int, float, or list of two elements.")

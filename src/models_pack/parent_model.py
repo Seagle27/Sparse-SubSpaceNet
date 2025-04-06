@@ -14,10 +14,7 @@ class ParentModel(nn.Module):
         return None
 
     def get_model_file_name(self):
-        if self.system_model.params.M is None:
-            M = "rand"
-        else:
-            M = self.system_model.params.M
+        M = self.system_model.params.M
         return f"{self.get_model_name()}_" + \
             f"N={self.N}_" + \
             f"M={M}_" + \

@@ -21,6 +21,7 @@ This script defines some helpful functions:
 """
 
 # Imports
+from typing import Union, Tuple
 import numpy as np
 import torch
 
@@ -379,6 +380,18 @@ def print_loss_results_from_simulation(loss_results: dict):
                 print(txt)
             print("\n")
         print("\n")
+
+
+Number = Union[int, float]
+
+def resolve_param(value: Union[Number, Tuple[Number, Number]]) -> Number:
+    if isinstance(value, (tuple, list)):
+        low, high = value
+        if isinstance(low, int) and isinstance(high, int):
+            return random.randint(low, high)
+        else:
+            return random.uniform(low, high)
+    return value
 
 
 if __name__ == "__main__":
