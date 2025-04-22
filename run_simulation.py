@@ -13,6 +13,7 @@ from src.data_handler import create_dataset, load_datasets, SameLengthBatchSampl
 from src.plotting import initialize_figures, plot_results
 from src.training import set_criterions
 from src.utils import print_loss_results_from_simulation
+from src.steering_vector_generator import SteeringVectorGenerator
 
 
 class SimulationRunner:
@@ -20,6 +21,7 @@ class SimulationRunner:
         self.config = config
         self.base_path = Path(__file__).parent.parent / "data"
         self.paths = self._init_paths()
+        self.monte_carlo_simulations = 5
 
     def _init_paths(self):
         paths = {
@@ -155,16 +157,25 @@ class SimulationRunner:
                 return self._run_single_simulation()
 
         model = None
-        if config.commands.train_model:
-            model = self.train_model(model_gen, train_dataset)
-
-        result = None
-        if config.commands.evaluate_mode:
-            result = self.evaluate_model(model, system_model, test_dataset)
-
-        if config.commands.save_to_file:
-            sys.stdout.close()
-            sys.stdout = self.orig_stdout
+        try:
+            if config.commands.train_model:
+                print(1)
+                model = self.train_model(model_gen, train_dataset)
+    
+            result = None
+            if config.commands.evaluate_mode:
+                print(2)
+                result = self.evaluate_model(model, system_model, test_dataset)
+    
+            if config.commands.save_to_file:
+                print(3)
+                sys.stdout.close()
+                sys.stdout = self.orig_stdout
+        except Exception as e:
+            print("error: {}".format(e))
+            result = None
+            
+        SteeringVectorGenerator.reset_instance()
 
         return result
 
@@ -177,18 +188,31 @@ class SimulationRunner:
             loss_dict[key] = {}
             for val in values:
                 setattr(self.config.system_model, key, val)
-                print(f"Running scenario: {key} = {val}")
-                loss = self._run_single_simulation()
+                loss, successful_simulations = {}, 0
+                for i in range(self.monte_carlo_simulations):
+                    
+                    print(f"Running scenario: {key} = {val}, simulation step = {i}")
+                    result = self._run_single_simulation()
+                    if result is not None:
+                        successful_simulations += 1
+                        if not loss:
+                            loss = result
+                        else:
+                            for k in result.keys():
+                                loss[k]['Overall'] += result[k]['Overall']
+                for k in loss.keys():
+                    loss[k]['Overall'] = loss[k]['Overall'] / successful_simulations
                 loss_dict[key][val] = loss
+                print(loss_dict)
 
         if None not in list(next(iter(loss_dict.values())).values()):
             print_loss_results_from_simulation(loss_dict)
-            if self.config.commands.plot_results:
-                plot_results(
-                    loss_dict,
-                    criterion=self.config.evaluation.criterion,
-                    plot_acc=False,
-                    save_to_file=self.config.commands.save_plots,
-                )
+            # if self.config.commands.plot_results:
+            #     plot_results(
+            #         loss_dict,
+            #         criterion=self.config.evaluation.criterion,
+            #         plot_acc=False,
+            #         save_to_file=self.config.commands.save_plots,
+            #     )
 
         return loss_dict

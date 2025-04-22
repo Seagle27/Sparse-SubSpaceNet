@@ -15,6 +15,7 @@ class SteeringVectorGenerator:
         self.array = array
         self.params = params
         self.dist_array_elems = dist_array_elems
+        print("Initializing Steering Vector Generator with eta={}".format(self.params.eta))
         self._uniform_bias = np.random.uniform(-self.params.bias, self.params.bias, size=1)
         self._mis_distance = np.random.uniform(-self.params.eta, self.params.eta, size=self.params.N)
 
@@ -98,3 +99,7 @@ class SteeringVectorGenerator:
         phase = np.deg2rad(interp_phase(theta_deg))
         amps = 10 ** (interp_amps(theta_deg) / 20)
         return amps * np.exp(1j * phase)
+
+    @classmethod
+    def reset_instance(cls):
+        cls._instance = None
