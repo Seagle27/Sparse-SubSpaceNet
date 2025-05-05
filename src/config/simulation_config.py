@@ -30,10 +30,13 @@ class SystemModelParams:
     sv_noise_var: float = 0.0
     freq_values: list = field(default_factory=lambda: [0, 500])
     antenna_pattern: bool = False
+    doa_range: list = field(default_factory=lambda: (-60, 60))
+    min_gap: int = 10
 
     def __post_init__(self):
         self.M = normalize_range_param(self.M)
         self.snr = normalize_range_param(self.snr)
+        self.doa_range = tuple(self.doa_range)
 
 @dataclass
 class TrainingParams:

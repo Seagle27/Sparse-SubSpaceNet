@@ -63,7 +63,7 @@ class Samples(SystemModel):
 
         """
 
-        def create_doa_with_gap(gap: float, M: int, doa_range=(-70, 70)):
+        def create_doa_with_gap(M: int):
             """
             Create M DOA values in the given range (in degrees) such that the difference
             between consecutive values is at least 'gap' (in degrees).
@@ -82,26 +82,26 @@ class Samples(SystemModel):
             Raises:
                 ValueError: If the range is too small for M points with the given gap.
             """
-            L, U = doa_range
+            L, U = self.params.doa_range
             total_range = U - L
 
-            if total_range < (M - 1) * gap:
+            if total_range < (M - 1) * self.params.min_gap:
                 raise ValueError("Invalid parameters. Use a smaller gap or a larger DOA range.")
 
             # The remaining space after reserving the minimum gap
-            extra = total_range - (M - 1) * gap
+            extra = total_range - (M - 1) * self.params.min_gap
 
             # Generate M random numbers in [0, 1] and sort them.
             r = np.sort(np.random.rand(M))
 
             # Compute the DOAs: fixed gap increments plus a random extra offset.
-            DOA = L + gap * np.arange(M) + extra * r
+            DOA = L + self.params.min_gap * np.arange(M) + extra * r
 
             return DOA
 
         if doa == None:
             # Generate angels with gap greater than 0.2 rad (nominal case)
-            self.doa = np.array(create_doa_with_gap(gap=5, M=M)) * D2R
+            self.doa = np.array(create_doa_with_gap(M=M)) * D2R
         else:
             # Generate
             self.doa = np.array(doa) * D2R

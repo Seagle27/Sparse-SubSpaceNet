@@ -21,7 +21,7 @@ class SimulationRunner:
         self.config = config
         self.base_path = Path(__file__).parent.parent / "data"
         self.paths = self._init_paths()
-        self.monte_carlo_simulations = 5
+        self.monte_carlo_simulations = 1
 
     def _init_paths(self):
         paths = {
@@ -159,16 +159,13 @@ class SimulationRunner:
         model = None
         try:
             if config.commands.train_model:
-                print(1)
                 model = self.train_model(model_gen, train_dataset)
-    
+
             result = None
             if config.commands.evaluate_mode:
-                print(2)
                 result = self.evaluate_model(model, system_model, test_dataset)
-    
+
             if config.commands.save_to_file:
-                print(3)
                 sys.stdout.close()
                 sys.stdout = self.orig_stdout
         except Exception as e:

@@ -19,7 +19,7 @@ from typing import Optional
 
 from src.steering_vector_generator import SteeringVectorGenerator
 from src.sparse_array import get_array_locations, get_virtual_ula_array
-from src.core.model_params import SystemModelParams
+from src.config.simulation_config import SystemModelParams
 
 
 class SystemModel(object):
