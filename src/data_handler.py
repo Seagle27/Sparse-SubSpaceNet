@@ -35,7 +35,7 @@ from torch.utils.data import Dataset, Sampler
 from pathlib import Path
 
 from src.signal_creation import Samples
-from src.system_model import SystemModelParams
+from src.config.simulation_config import SystemModelParams
 from src.utils import *
 
 

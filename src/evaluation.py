@@ -46,7 +46,8 @@ from src.methods_pack.mle import MLE
 from src.models import (ModelGenerator, SubspaceNet, DCDMUSIC, DeepAugmentedMUSIC,
                         DeepCNN, DeepRootMUSIC, TransMUSIC, SparseNet)
 from src.plotting import plot_spectrum
-from src.system_model import SystemModel, SystemModelParams
+from src.system_model import SystemModel
+from src.config.simulation_config import SystemModelParams
 
 
 def get_model_based_method(method_name: str, system_model: SystemModel):

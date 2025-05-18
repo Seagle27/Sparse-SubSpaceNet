@@ -10,7 +10,7 @@ Edited: 29/05/24
 # Imports
 import warnings
 # Internal Imports
-from src.system_model import SystemModel, SystemModelParams
+from src.system_model import SystemModel
 from src.models_pack.trans_music import TransMUSIC
 from src.models_pack.subspacenet import SubspaceNet
 from src.models_pack.dcd_music import DCDMUSIC
@@ -18,6 +18,7 @@ from src.models_pack.deep_augmented_music import DeepAugmentedMUSIC
 from src.models_pack.deep_cnn import DeepCNN
 from src.models_pack.deep_root_music import DeepRootMUSIC
 from src.models_pack.sparse_net import SparseNet
+from src.config.simulation_config import SystemModelParams
 
 
 # warnings.simplefilter("ignore")

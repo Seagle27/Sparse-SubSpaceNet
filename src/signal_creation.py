@@ -14,9 +14,10 @@ This class is used for defining the samples model.
 
 # Imports
 import numpy as np
-from src.system_model import SystemModel, SystemModelParams
+from src.system_model import SystemModel
 from src.utils import D2R, resolve_param
 from src.read_array import load_arrays_from_txt
+from src.config.simulation_config import SystemModelParams
 
 class Samples(SystemModel):
     """
