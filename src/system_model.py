@@ -115,11 +115,11 @@ class SystemModel(object):
         """create an array of sensors locations, around to origin."""
         if array_form.lower() == 'ula':
             self.array = np.linspace(0, self.params.N, self.params.N, endpoint=False)
-        elif array_form.lower().startswith('mra'):
+        elif self.is_sparse_array:
             self.array = get_array_locations(array_form)
             self.virtual_array = get_virtual_ula_array(self.array)
         else:
-            raise ValueError(f"{array_form} array form isn't supported")
+            raise ValueError(f"{array_form} isn't supported")
 
     def calc_fresnel_fraunhofer_distance(self) -> tuple:
         """
