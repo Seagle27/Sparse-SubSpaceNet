@@ -65,6 +65,7 @@ class SubspaceNet(ParentModel):
         self.deconv4 = nn.ConvTranspose2d(32, 1, kernel_size=2)
         self.DropOut = nn.Dropout(self.p)
         self.ReLU = nn.ReLU()
+        self.norm1 = SpectralNormalization()
 
         # Set the subspace method for training
         self.set_diff_method(diff_method, system_model)
@@ -109,6 +110,7 @@ class SubspaceNet(ParentModel):
         Rx_real = Rx_View[:, :N, :]  # Shape: [Batch size, N, N])
         Rx_imag = Rx_View[:, N:, :]  # Shape: [Batch size, N, N])
         Kx_tag = torch.complex(Rx_real, Rx_imag)  # Shape: [Batch size, N, N])
+        # Kx_tag = self.norm1(Kx_tag)
         # Apply Gram operation diagonal loading
         Rz = gram_diagonal_overload(
             Kx=Kx_tag, eps=1, batch_size=self.batch_size

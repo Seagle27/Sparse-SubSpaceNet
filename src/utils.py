@@ -28,6 +28,7 @@ import torch
 torch.cuda.empty_cache()
 import random
 import scipy
+import torch.nn as nn
 import warnings
 
 # Constants
@@ -392,6 +393,47 @@ def resolve_param(value: Union[Number, Tuple[Number, Number]]) -> Number:
         else:
             return random.uniform(low, high)
     return value
+
+
+class SpectralNormalization(nn.Module):
+    """
+    Scale each matrix K in a batch by its largest singular value.
+
+    Parameters
+    ----------
+    eps : float, optional (default=1e-12)
+        Positive constant added to the denominator to avoid division by zero.
+        It is saved as a buffer so it moves with the module across devices.
+    """
+
+    def __init__(self, eps: float = 1e-12):
+        super().__init__()
+        # saved+loaded, moved with .to(), no grad, not in parameters()
+        self.register_buffer("eps", torch.tensor(float(eps)))
+
+    def forward(self, K: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        K : torch.Tensor
+            Input batch, shape (B, M, N), ``float`` or ``complex`` dtype.
+
+        Returns
+        -------
+        torch.Tensor
+            Normalised batch, same shape, dtype, and device as K.
+        """
+        if K.ndim != 3:
+            raise ValueError(
+                f"SpectralNormalizeK expects (B,M,N) input, got {K.shape}"
+            )
+
+        sigma_max = torch.linalg.norm(K, ord=2, dim=(-2, -1))  # (B,)
+        sigma_max = sigma_max.clamp_min(self.eps) # avoid div‑0 when K ≈ 0
+        K_hat = K / sigma_max[..., None, None]
+        return K_hat
+
+
 
 
 if __name__ == "__main__":
