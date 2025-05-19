@@ -107,7 +107,7 @@ def evaluate_dnn_model(
         plot_spec: bool = False,
         figures: dict = None,
         phase: str = "test",
-        eigen_regula_weight = None) -> dict:
+        eigen_regularization_loss = None) -> dict:
     """
     Evaluate the DNN model on a given dataset.
 
@@ -280,7 +280,7 @@ def evaluate_dnn_model(
                     eval_loss = criterion(angles_pred, angles)
                     # add eigen regularization to the loss if phase is validation
                 if phase == "validation" and eigen_regularization is not None:
-                    eval_loss += eigen_regularization * eigen_regula_weight
+                    eval_loss = eigen_regularization_loss.get_regularized_loss(eval_loss, eigen_regularization)
 
             else:
                 raise Exception(f"evaluate_dnn_model: Model type is not defined: {model._get_name()}")
@@ -540,6 +540,8 @@ def evaluate_model_based(
                 #     angles, distances = y[:len(y) // 2][None, :], y[len(y) // 2:][None, :]
                 loss = criterion(angles_prediction, angles)
                 loss_list.append(loss.item() / x.shape[0])
+                acc_tmp = torch.mean((sources_num_estimation == sources_num).float()).item()
+                acc_list.append(acc_tmp)
 
             # MVDR algorithm
             elif algorithm.startswith("mvdr"):

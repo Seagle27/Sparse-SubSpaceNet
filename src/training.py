@@ -27,8 +27,6 @@ Attributes:
 ----------
 None
 """
-import warnings
-EIGEN_REGULARIZATION_WEIGHT = 0
 # Imports
 import matplotlib.pyplot as plt
 import copy
@@ -353,6 +351,8 @@ def train(
     loss_valid_list_ranges = train_res.get("loss_valid_list_ranges")
     acc_train_list = train_res.get("acc_train_list")
     acc_valid_list = train_res.get("acc_valid_list")
+    reg_loss_train_list = train_res.get("reg_loss_train_list")
+
     figures_saving_path = Path(saving_path).parent / "simulations" / "results" / "plots"
     if plot_curves:
         if acc_train_list is not None and acc_valid_list is not None:
@@ -371,6 +371,17 @@ def train(
             range_train_loss=loss_train_list_ranges,
             range_valid_loss=loss_valid_list_ranges
         )
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(range(1, len(reg_loss_train_list) + 1), reg_loss_train_list, label="eigen training Loss")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.title("Eigen Regularization Loss")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
         if save_figures:
             fig_loss.savefig(figures_saving_path / f"Loss_{model.get_model_name()}_{dt_string_for_save}.png")
         fig_loss.show()
@@ -410,6 +421,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     loss_valid_list_ranges = []
     acc_train_list = []
     acc_valid_list = []
+    reg_loss_train_list = []
     min_valid_loss = np.inf
     # train_length = len(training_params.train_dataset)
     if isinstance(model, TransMUSIC):
@@ -424,6 +436,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
         elif training_params.training_objective == "range":
             training_angle_extractor = False
 
+    eigen_regularization_loss = EigenRegularizationLoss()
+
     # Set initial time for start training
     since = time.time()
     print("\n---Start Training Stage ---\n")
@@ -437,6 +451,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
         for epoch in range(training_params.epochs):
             epoch_train_loss = 0.0
+            epoch_train_reg_loss = 0.0
             epoch_train_loss_angle = 0.0
             epoch_train_loss_distance = 0.0
             epoch_train_acc = 0.0
@@ -452,8 +467,6 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
             # Set model to train mode
             model.train()
             train_length = 0
-            # eigen regularization weight
-            eigen_regularization_weight = training_params.learning_rate * EIGEN_REGULARIZATION_WEIGHT
 
             for data in training_params.train_dataset:
                 x, sources_num, label, masks = data #TODO
@@ -528,21 +541,13 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                                     f" Deep Augmented MUSIC or DeepCNN or DeepRootMUSIC")
 
                 elif isinstance(model, SparseNet):
-                    model_output = model(x, sources_num=sources_num)
-                    # in this case there are 2 labels - angles and distances.
-                    if training_params.training_objective.endswith("angle"):
-                        angles_pred = model_output[0]
-                        source_estimation = model_output[1]
-                        eigen_regularization = model_output[2]
-                    else:
-                        raise Exception(f"train_model: Unrecognized training objective"
-                                        f" {training_params.training_objective}, for SubspaceNet model")
+                    angles_pred, source_estimation, eigen_regularization  = model(x, sources_num=sources_num, epoch=epoch)
 
                 ############################################################################################################
                 # calculate the accuracy for the source estimation
                 if source_estimation is not None:
-                    epoch_train_acc += ((((torch.sum(
-                        (source_estimation == sources_num * torch.ones_like(source_estimation)).float()).item()))))
+                    source_estimation_acc = eigen_regularization_loss.source_estimation_accuracy(sources_num, source_estimation)
+                    epoch_train_acc += source_estimation_acc
 
                 ############################################################################################################
                 # Compute training loss
@@ -572,7 +577,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                     if isinstance(train_loss, tuple):
                         train_loss, train_loss_angle, train_loss_distance = train_loss
                     if eigen_regularization is not None:
-                        train_loss += eigen_regularization * eigen_regularization_weight
+                        train_loss = eigen_regularization_loss.get_regularized_loss(train_loss, eigen_regularization)
                 elif isinstance(model, DeepCNN) or isinstance(model, DeepRootMUSIC) or isinstance(model,
                                                                                                   DeepAugmentedMUSIC):
                     train_loss = training_params.criterion(angles_pred.float(), angles.float())
@@ -600,6 +605,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 elif isinstance(training_params.criterion, RMSPELoss) or isinstance(training_params.criterion,
                                                                                     CartesianLoss):
                     epoch_train_loss += train_loss.item()
+                    epoch_train_reg_loss += torch.sum(eigen_regularization).item()
                     if train_loss_angle is not None and train_loss_distance is not None:
                         epoch_train_loss_angle += train_loss_angle.item()
                         epoch_train_loss_distance += train_loss_distance.item()
@@ -612,6 +618,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
             ################################################################################################################
             epoch_train_loss /= train_length
+            epoch_train_reg_loss /= train_length
             if train_loss_angle is not None and train_loss_distance is not None:
                 epoch_train_loss_angle /= train_length
                 epoch_train_loss_distance /= train_length
@@ -619,6 +626,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 epoch_train_acc /= train_length
             # End of epoch. Calculate the average loss
             loss_train_list.append(epoch_train_loss)
+            reg_loss_train_list.append(epoch_train_reg_loss)
+
             if epoch_train_loss_angle != 0.0 and epoch_train_loss_distance != 0.0:
                 loss_train_list_angles.append(epoch_train_loss_angle)
                 loss_train_list_ranges.append(epoch_train_loss_distance)
@@ -629,7 +638,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 training_params.valid_dataset,
                 training_params.criterion,
                 phase="validation",
-                eigen_regula_weight=eigen_regularization_weight,
+                eigen_regularization_loss=eigen_regularization_loss,
             )
             loss_valid_list.append(valid_loss.get("Overall"))
 
@@ -676,7 +685,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     # load best model weights
     model.load_state_dict(best_model_wts)
     torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
-    res = {"model": model, "loss_train_list": loss_train_list, "loss_valid_list": loss_valid_list}
+    res = {"model": model, "loss_train_list": loss_train_list, "loss_valid_list": loss_valid_list,
+           "reg_loss_train_list": reg_loss_train_list}
     if len(loss_train_list_angles) > 0 and len(loss_train_list_ranges) > 0:
         res["loss_train_list_angles"] = loss_train_list_angles
         res["loss_train_list_ranges"] = loss_train_list_ranges

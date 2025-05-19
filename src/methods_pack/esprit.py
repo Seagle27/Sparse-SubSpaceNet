@@ -1,15 +1,18 @@
+from typing import Any
+
 import torch
 import torch.nn as nn
+from torch import Tensor
 
 from src.methods_pack.subspace_method import SubspaceMethod
 from src.system_model import SystemModel
 
 
 class ESPRIT(SubspaceMethod):
-    def __init__(self, system_model: SystemModel):
-        super().__init__(system_model)
+    def __init__(self, system_model: SystemModel, model_order_estimation:str = 'sorte'):
+        super().__init__(system_model, model_order_estimation)
 
-    def forward(self, cov: torch.Tensor, sources_num: torch.tensor):
+    def forward(self, cov: torch.Tensor, sources_num: torch.tensor) -> tuple[Tensor, Tensor, Tensor]:
         # get the signal subspace
         signal_subspace, _, sources_estimation, regularization = self.subspace_separation(
             cov,

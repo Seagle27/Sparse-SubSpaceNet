@@ -291,6 +291,7 @@ class RMSPELoss(nn.Module):
         #         self.balance_factor *= 0.85
         #         print(f"Balance factor for RMSPE updated --> {self.balance_factor.item()}")
         self.balance_factor = 0.1
+
 class MSPELoss(nn.Module):
     """Mean Square Periodic Error (MSPE) loss function.
     This loss function calculates the MSPE between the predicted values and the target values.
@@ -551,6 +552,29 @@ def set_criterions(criterion_name: str, balance_factor: float = 0.0):
         raise Exception(f"criterions.set_criterions: Criterion {criterion_name} is not defined")
     print(f"Loss measure = {criterion_name}")
     return criterion, subspace_criterion
+
+
+class EigenRegularizationLoss:
+    EIGEN_REGULARIZATION_WEIGHT = 1e-1
+
+    def __init__(self, init_value=EIGEN_REGULARIZATION_WEIGHT):
+        self._eigenregularization_weight = init_value
+
+    def get_eigenregularization_weight(self):
+        return self._eigenregularization_weight
+
+    def source_estimation_accuracy(self, sources_num, source_estimation=None):
+        if source_estimation is None:
+            return 0
+        return torch.sum(source_estimation == sources_num * torch.ones_like(source_estimation).float()).item()
+
+    def get_regularized_loss(self, loss, l_eig=None):
+        if l_eig is not None:
+            loss_r = loss + self._eigenregularization_weight * l_eig
+        else:
+            loss_r = loss
+        return torch.sum(loss_r)
+
 
 
 if __name__ == "__main__":

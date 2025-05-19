@@ -23,6 +23,7 @@ class SimulationRunner:
         self.paths = self._init_paths()
         self.monte_carlo_simulations = 1
 
+
     def _init_paths(self):
         paths = {
             "datasets": self.base_path / "datasets" / "uniform_bias_spacing",
@@ -157,20 +158,16 @@ class SimulationRunner:
                 return self._run_single_simulation()
 
         model = None
-        try:
-            if config.commands.train_model:
-                model = self.train_model(model_gen, train_dataset)
+        if config.commands.train_model:
+            model = self.train_model(model_gen, train_dataset)
 
-            result = None
-            if config.commands.evaluate_mode:
-                result = self.evaluate_model(model, system_model, test_dataset)
+        result = None
+        if config.commands.evaluate_mode:
+            result = self.evaluate_model(model, system_model, test_dataset)
 
-            if config.commands.save_to_file:
-                sys.stdout.close()
-                sys.stdout = self.orig_stdout
-        except Exception as e:
-            print("error: {}".format(e))
-            result = None
+        if config.commands.save_to_file:
+            sys.stdout.close()
+            sys.stdout = self.orig_stdout
             
         SteeringVectorGenerator.reset_instance()
 
