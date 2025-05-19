@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 
 from src.utils import *
 from src.system_model import SystemModel
+from src.sparse_covariance import SparseCovariance
 
 
 class SubspaceMethod(nn.Module):
@@ -208,6 +209,12 @@ class SubspaceMethod(nn.Module):
             Rx = self.__spatial_smoothing_covariance(x)
         elif mode == "sparse":
             Rx = self.__virtual_array_covariance(x)
+            # R_xx = self.__sample_covariance(x)
+            # cov_optimizer = SparseCovariance(self.system_model)
+            # Rx = cov_optimizer(R_xx)
+            # if Rx.dim() != R_xx.dim():
+            #     Rx = Rx.unsqueeze(0)
+
         elif mode == "sparse_sps":
             Rx = self.__virtual_array_covariance(x)
             Rx = self.__spatial_smoothing_coarray_cov(Rx)
