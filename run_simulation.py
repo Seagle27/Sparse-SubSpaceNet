@@ -19,7 +19,7 @@ from src.steering_vector_generator import SteeringVectorGenerator
 class SimulationRunner:
     def __init__(self, config: SimulationConfig):
         self.config = config
-        self.base_path = Path(__file__).parent.parent / "data"
+        self.base_path = Path(__file__).parent / "data"
         self.paths = self._init_paths()
         self.monte_carlo_simulations = 1
 
