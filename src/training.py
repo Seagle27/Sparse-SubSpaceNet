@@ -228,7 +228,7 @@ class TrainingParams(object):
             self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma)
         elif scheduler == "ReduceLROnPlateau":
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=gamma,
-                                                  patience=10, verbose=True)
+                                                  patience=15, verbose=True)
         else:
             raise ValueError(f"Scheduler {scheduler} is not defined.")
 
@@ -541,7 +541,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                                     f" Deep Augmented MUSIC or DeepCNN or DeepRootMUSIC")
 
                 elif isinstance(model, SparseNet):
-                    angles_pred, source_estimation, eigen_regularization  = model(x, sources_num=sources_num, epoch=epoch)
+                    angles_pred, source_estimation, eigen_regularization  = model(x, sources_num=sources_num)
 
                 ############################################################################################################
                 # calculate the accuracy for the source estimation
@@ -592,27 +592,28 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 try:
                     train_loss.backward(retain_graph=True)
                 except RuntimeError as r:
-                    raise Exception(f"linalg error: \n{r}")
-
-                # optimizer update
-                optimizer.step()
-                # reset gradients
-                model.zero_grad()
-                # add batch loss to overall epoch loss
-                if isinstance(training_params.criterion, nn.BCELoss):
-                    # BCE is averaged
-                    epoch_train_loss += train_loss.item() * len(data[0])
-                elif isinstance(training_params.criterion, RMSPELoss) or isinstance(training_params.criterion,
-                                                                                    CartesianLoss):
-                    epoch_train_loss += train_loss.item()
-                    epoch_train_reg_loss += torch.sum(eigen_regularization).item()
-                    if train_loss_angle is not None and train_loss_distance is not None:
-                        epoch_train_loss_angle += train_loss_angle.item()
-                        epoch_train_loss_distance += train_loss_distance.item()
-                elif isinstance(training_params.criterion, nn.CrossEntropyLoss):
-                    epoch_train_loss += train_loss.item()
+                    # raise Exception(f"linalg error: \n{r}")
+                    print(f"linalg error: \n{r}")
                 else:
-                    raise Exception(f"Criterion type {training_params.criterion} is not defined")
+                    # optimizer update
+                    optimizer.step()
+                    # reset gradients
+                    model.zero_grad()
+                    # add batch loss to overall epoch loss
+                    if isinstance(training_params.criterion, nn.BCELoss):
+                        # BCE is averaged
+                        epoch_train_loss += train_loss.item() * len(data[0])
+                    elif isinstance(training_params.criterion, RMSPELoss) or isinstance(training_params.criterion,
+                                                                                        CartesianLoss):
+                        epoch_train_loss += train_loss.item()
+                        epoch_train_reg_loss += torch.sum(eigen_regularization).item()
+                        if train_loss_angle is not None and train_loss_distance is not None:
+                            epoch_train_loss_angle += train_loss_angle.item()
+                            epoch_train_loss_distance += train_loss_distance.item()
+                    elif isinstance(training_params.criterion, nn.CrossEntropyLoss):
+                        epoch_train_loss += train_loss.item()
+                    else:
+                        raise Exception(f"Criterion type {training_params.criterion} is not defined")
 
                 pbar.update(1)
 
