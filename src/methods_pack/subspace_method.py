@@ -223,7 +223,7 @@ class SubspaceMethod(nn.Module):
             raise ValueError(
                 f"SubspaceMethod.pre_processing: method {mode} is not recognized for covariance calculation.")
 
-        return Rx
+        return Rx.to(device=x.device)
 
     def __sample_covariance(self, x: torch.Tensor):
         """

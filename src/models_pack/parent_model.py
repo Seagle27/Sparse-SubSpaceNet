@@ -14,13 +14,14 @@ class ParentModel(nn.Module):
         return None
 
     def get_model_file_name(self):
-        M = self.system_model.params.M
+        M = str(self.system_model.params.M).replace(' ', '-')
+        snr = str(self.system_model.params.snr).replace(' ', '-')
         return f"{self.get_model_name()}_" + \
             f"N={self.N}_" + \
             f"M={M}_" + \
             f"T={self.system_model.params.T}_" + \
             f"{self.system_model.params.signal_type}_" + \
-            f"SNR={self.system_model.params.snr}_" + \
+            f"SNR={snr}_" + \
             f"{self.system_model.params.field_type}_field_" + \
             f"{self.system_model.params.signal_nature}_" + \
             f"eta={self.system_model.params.eta}_" + \
