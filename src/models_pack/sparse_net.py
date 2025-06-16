@@ -13,8 +13,7 @@ from src.methods_pack.root_music import RootMusic, root_music
 
 class SparseNet(SubspaceNet):
 
-    def __init__(self, tau: int, diff_method: str = "esprit",
-                 system_model: SystemModel = None):
+    def __init__(self, **kwargs):
         """Initializes the SubspaceNet model.
 
         Args:
@@ -23,14 +22,13 @@ class SparseNet(SubspaceNet):
 
 
         """
-        super().__init__(tau, diff_method, system_model, field_type='Far')
+        super().__init__(**kwargs)
         if self.system_model.is_sparse_array:
             self.L = len(self.system_model.virtual_array)
         else:
             self.L = len(self.system_model.array)
 
         self.differences_array = self.system_model.array[:, None] - self.system_model.array[None, :]
-
 
     def pre_processing(self, x):
         """

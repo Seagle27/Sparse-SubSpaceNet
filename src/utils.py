@@ -385,6 +385,7 @@ def print_loss_results_from_simulation(loss_results: dict):
 
 Number = Union[int, float]
 
+
 def resolve_param(value: Union[Number, Tuple[Number, Number]]) -> Number:
     if isinstance(value, (tuple, list)):
         low, high = value
@@ -393,6 +394,13 @@ def resolve_param(value: Union[Number, Tuple[Number, Number]]) -> Number:
         else:
             return random.uniform(low, high)
     return value
+
+
+def validate_constant_sources_number(sources_num):
+    if (sources_num != sources_num[0]).any():
+        # in this case, the sources number is not the same for all samples in the batch
+        raise Exception(f"train_model:"
+                        f" The sources number is not the same for all samples in the batch.")
 
 
 class SpectralNormalization(nn.Module):

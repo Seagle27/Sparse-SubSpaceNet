@@ -144,13 +144,7 @@ class ModelGenerator(object):
         """
 
         """
-        tau = self.model_params.get("tau")
-        diff_method = self.model_params.get("diff_method")
-        field_type = self.model_params.get("field_type")
-        self.model = SubspaceNet(tau=tau,
-                                 diff_method=diff_method,
-                                 system_model=self.system_model,
-                                 field_type=field_type)
+        self.model = SubspaceNet(system_model=self.system_model, **self.model_params)
 
     def __set_dcd_music(self):
         """
@@ -192,12 +186,7 @@ class ModelGenerator(object):
         self.model = DeepRootMUSIC(tau=tau, activation_value=activation_val)
 
     def __set_sparse_net(self):
-        tau = self.model_params.get("tau")
-        diff_method = self.model_params.get("diff_method")
-        field_type = self.model_params.get("field_type")
-        self.model = SparseNet(tau=tau,
-                               diff_method=diff_method,
-                               system_model=self.system_model)
+        self.model = SparseNet(system_model=self.system_model, **self.model_params)
 
     def __verify_model_params(self, model_params):
         """

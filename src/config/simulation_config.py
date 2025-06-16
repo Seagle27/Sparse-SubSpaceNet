@@ -51,7 +51,6 @@ class TrainingParams:
     gamma: float = 0.5
     scheduler: str = "StepLR"
     training_objective: str = "angle"
-    criterion: str = "rmspe"
     balance_factor: float = 1.0
     true_doa_train: Optional[list] = None
     true_range_train: Optional[list] = None

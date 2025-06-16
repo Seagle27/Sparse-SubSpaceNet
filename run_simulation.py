@@ -49,7 +49,6 @@ class SimulationRunner:
             .set_schedular(config.training.scheduler,
                            config.training.step_size,
                            config.training.gamma)
-            .set_criterion(config.training.criterion, config.training.balance_factor)
         )
 
         model, _, _ = train(

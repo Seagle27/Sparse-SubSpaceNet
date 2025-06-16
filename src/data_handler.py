@@ -200,6 +200,15 @@ class TimeSeriesDataset(Dataset):
 
 
 def collate_fn(batch):
+    """
+    Collate function for the dataset loader.
+    Args:
+        batch:  list of tuples, each tuple contains the time series, the number of sources and the labels.
+
+    Returns:
+
+
+    """
     time_series, source_num, labels = zip(*batch)
 
     # Find the maximum length in this batch
@@ -207,7 +216,6 @@ def collate_fn(batch):
 
     # Pad labels and create masks
     padded_labels = torch.zeros(len(batch), max_length, dtype=torch.float32)
-    masks = torch.zeros(len(batch), max_length, dtype=torch.float32)
 
     for i, lb in enumerate(labels):
         length = lb.size(0)
@@ -216,22 +224,15 @@ def collate_fn(batch):
             angles, distances = torch.split(lb, source_num[i], dim=0)
             lb = torch.cat((angles, torch.zeros(max_length // 2 - source_num[i], dtype=torch.float32)))
             lb = torch.cat((lb, distances, torch.zeros(max_length // 2 - source_num[i], dtype=torch.float32)))
-            mask = torch.zeros(max_length, dtype=torch.float32)
-            mask[: length // 2] = 1
-            mask[max_length // 2: max_length // 2 + length // 2] = 1
         else:
             lb = torch.cat((lb, torch.zeros(max_length - length, dtype=torch.long)))
-            mask = torch.zeros(max_length, dtype=torch.float32)
-            mask[:length] = 1
         padded_labels[i] = lb
-        masks[i] = mask
 
     # Stack labels
     time_series = torch.stack(time_series).squeeze()
     sources_num = torch.tensor(source_num)
 
-
-    return time_series, sources_num, padded_labels, masks
+    return time_series, sources_num, padded_labels
 
 
 class SameLengthBatchSampler(Sampler):

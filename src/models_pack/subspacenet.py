@@ -7,10 +7,11 @@ import torch.nn as nn
 from src.models_pack.parent_model import ParentModel
 from src.system_model import SystemModel
 from src.utils import *
+from src.criterions import EigenRegularizationLoss
 
 from src.methods_pack.music import MUSIC
 from src.methods_pack.esprit import ESPRIT
-from src.methods_pack.root_music import RootMusic, root_music
+from src.methods_pack.root_music import RootMusic
 
 
 class SubspaceNet(ParentModel):
@@ -42,7 +43,8 @@ class SubspaceNet(ParentModel):
     """
 
     def __init__(self, tau: int, diff_method: str = "root_music",
-                 system_model: SystemModel = None, field_type: str = "Far"):
+                 system_model: SystemModel = None, field_type: str = "Far", eigen_regularization_weight=1,
+                 criterion="rmspe"):
         """Initializes the SubspaceNet model.
 
         Args:
@@ -51,12 +53,12 @@ class SubspaceNet(ParentModel):
             M (int): Number of sources.
 
         """
-        super(SubspaceNet, self).__init__(system_model)
+        super(SubspaceNet, self).__init__(system_model, criterion)
         self.tau = tau
         self.N = self.system_model.params.N
         self.diff_method = None
         self.field_type = field_type
-        self.p = 0.1
+        self.p = 0.25
         self.conv1 = nn.Conv2d(self.tau, 16, kernel_size=2)
         self.conv2 = nn.Conv2d(32, 32, kernel_size=2)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=2)
@@ -66,7 +68,7 @@ class SubspaceNet(ParentModel):
         self.DropOut = nn.Dropout(self.p)
         self.ReLU = nn.ReLU()
         self.norm1 = SpectralNormalization()
-
+        self._eigen_regularization = EigenRegularizationLoss(eigen_regularization_weight)
         # Set the subspace method for training
         self.set_diff_method(diff_method, system_model)
 
@@ -110,7 +112,7 @@ class SubspaceNet(ParentModel):
         Rx_real = Rx_View[:, :N, :]  # Shape: [Batch size, N, N])
         Rx_imag = Rx_View[:, N:, :]  # Shape: [Batch size, N, N])
         Kx_tag = torch.complex(Rx_real, Rx_imag)  # Shape: [Batch size, N, N])
-        # Kx_tag = self.norm1(Kx_tag)
+        Kx_tag = self.norm1(Kx_tag)
         # Apply Gram operation diagonal loading
         Rz = gram_diagonal_overload(
             Kx=Kx_tag, eps=1, batch_size=self.batch_size
@@ -253,3 +255,32 @@ class SubspaceNet(ParentModel):
         tau = self.tau
         diff_method = self.diff_method
         return f"tau={tau}_diff_method={diff_method}"
+
+    def training_step(self, batch):
+        x, sources_num, angles = self._prepare_batch(batch)
+        doa_prediction, sources_estimation, eigen_regularization = self(x, sources_num)
+        loss = self.criterion(doa_prediction, angles)
+        acc = self._eigen_regularization.source_estimation_accuracy(sources_num, sources_estimation)
+        loss = self._eigen_regularization.get_regularized_loss(loss, eigen_regularization)
+        return loss, acc, eigen_regularization
+
+    def validation_step(self, batch):
+        x, sources_num, angles = self._prepare_batch(batch)
+        doa_prediction, source_estimation, eigen_regularization = self(x, sources_num)
+        loss = self.criterion(doa_prediction, angles)
+        acc = self._eigen_regularization.source_estimation_accuracy(sources_num, source_estimation)
+        return loss, acc
+
+    def test_step(self, batch):
+        return self.validation_step(batch)
+
+    @staticmethod
+    def _prepare_batch(batch):
+        x, sources_num, angles = batch
+        if x.dim() == 2:
+            x = x.unsqueeze(0)
+        x = x.to(device)
+        angles = angles.to(device)
+        source_num = sources_num.to(device)
+        validate_constant_sources_number(sources_num)
+        return x, source_num[0], angles
