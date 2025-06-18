@@ -22,6 +22,7 @@ This script defines some helpful functions:
 
 # Imports
 from typing import Union, Tuple
+from torch import Tensor
 import numpy as np
 import torch
 
@@ -437,11 +438,47 @@ class SpectralNormalization(nn.Module):
             )
 
         sigma_max = torch.linalg.norm(K, ord=2, dim=(-2, -1))  # (B,)
-        sigma_max = sigma_max.clamp_min(self.eps) # avoid div‑0 when K ≈ 0
+        sigma_max = sigma_max.clamp_min(self.eps)  # avoid div‑0 when K ≈ 0
         K_hat = K / sigma_max[..., None, None]
         return K_hat
 
 
+# ─────────────────── helper: build Φ (|S|×|U|) ──────────────────
+def build_phi(array, virtual_array) -> Tensor:
+    s = torch.tensor(array, dtype=torch.int64)
+    v = torch.tensor(virtual_array, dtype=torch.int64)
+    phi = torch.zeros(s.numel(), v.numel())
+    for i, p in enumerate(s):
+        phi[i, (v == p).nonzero(as_tuple=True)[0]] = 1.0
+    return phi
+
+
+# ───────────── projections & prox  ─────────────
+
+def hermitian_proj(X: Tensor) -> Tensor:
+    return 0.5 * (X + X.conj().transpose(-2, -1))
+
+
+def toeplitz_proj(H: Tensor) -> Tensor:
+    B, L, _ = H.shape
+    T = H.clone()
+    for d in range(-L + 1, L):
+        diag = H.diagonal(d, dim1=-2, dim2=-1)  # (B, L-|d|)
+        mean = diag.mean(dim=-1, keepdim=True)
+        T.diagonal(d, dim1=-2, dim2=-1).copy_(mean.expand_as(diag))
+    return T
+
+
+def psd_proj(T: Tensor) -> Tensor:
+    lam, U = torch.linalg.eigh(T)
+    lam.clamp_(min=0.0)
+    return (U * lam.unsqueeze(-2)) @ U.transpose(-2, -1).conj()
+
+
+def svt(Z: Tensor, tau: float) -> Tensor:
+    U, s, Vh = torch.linalg.svd(Z)
+    s = torch.clamp(s - tau, min=0.0)
+    return (U * s.unsqueeze(-2)) @ Vh
 
 
 if __name__ == "__main__":

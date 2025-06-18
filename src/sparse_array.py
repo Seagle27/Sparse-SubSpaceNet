@@ -46,6 +46,7 @@ def get_virtual_ula_array(array_loc):
 
     return np.arange(0, largest_ula_element + 1, 1)
 
+
 def coprime_array(N: int, M: int) -> np.ndarray:
     r"""
     Generate the sensor locations (in half‐wavelength units) of a *coprime sparse array*

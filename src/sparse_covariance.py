@@ -4,7 +4,7 @@ import torch
 from torch import Tensor
 from typing import Tuple
 
-Tensor = torch.Tensor
+
 
 class SparseCovarianceCVXPY:
     """Solve eq. (17) from the paper:
@@ -149,44 +149,44 @@ class SparseCovarianceADMM:
         # ------------------------------------------------------------
         # ADMM iterations
         # ------------------------------------------------------------
-        for mu_i in [1e-1, mu]:
-            for k in range(max_iter):
-                # R-update  (diagonal solve, batched)
-                rhs = vec_meas + rho * (S - Udual + T - Vdual).reshape(B, -1)
-                vec_R = inv_coeff * rhs
-                R = vec_R.view(B, U, U)
 
-                # S-update  (SVT)
-                Z = R + Udual
-                S = self._svt(Z, mu / rho)
+        for k in range(max_iter):
+            # R-update  (diagonal solve, batched)
+            rhs = vec_meas + rho * (S - Udual + T - Vdual).reshape(B, -1)
+            vec_R = inv_coeff * rhs
+            R = vec_R.view(B, U, U)
 
-                # T-update  (Herm-Toeplitz-PSD)
-                W = R + Vdual
-                T = self._psd_proj(self._toeplitz_proj(self._hermitian_proj(W)))
+            # S-update  (SVT)
+            Z = R + Udual
+            S = self._svt(Z, mu / rho)
 
-                # dual ascent
-                Udual += R - S
-                Vdual += R - T
+            # T-update  (Herm-Toeplitz-PSD)
+            W = R + Vdual
+            T = self._psd_proj(self._toeplitz_proj(self._hermitian_proj(W)))
 
-                # convergence criteria (batch max)
-                r_norm = torch.max(
-                    (R - S).flatten(1).norm(dim=1),
-                    (R - T).flatten(1).norm(dim=1)
-                ).max()              # global primal residual
+            # dual ascent
+            Udual += R - S
+            Vdual += R - T
 
-                s_norm = rho * torch.max(
-                    (S - S_prev).flatten(1).norm(dim=1),
-                    (T - T_prev).flatten(1).norm(dim=1)
-                ).max()              # global dual residual
+            # convergence criteria (batch max)
+            r_norm = torch.max(
+                (R - S).flatten(1).norm(dim=1),
+                (R - T).flatten(1).norm(dim=1)
+            ).max()              # global primal residual
 
-                if verbose and (k % 25 == 0):
-                    print(f"iter {k:4d} | primal {r_norm:.3e} | dual {s_norm:.3e}")
+            s_norm = rho * torch.max(
+                (S - S_prev).flatten(1).norm(dim=1),
+                (T - T_prev).flatten(1).norm(dim=1)
+            ).max()              # global dual residual
 
-                if r_norm < tol_primal and s_norm < tol_dual:
-                    break
+            if verbose and (k % 25 == 0):
+                print(f"iter {k:4d} | primal {r_norm:.3e} | dual {s_norm:.3e}")
 
-                S_prev.copy_(S)
-                T_prev.copy_(T)
+            if r_norm < tol_primal and s_norm < tol_dual:
+                break
+
+            S_prev.copy_(S)
+            T_prev.copy_(T)
 
         return T
 

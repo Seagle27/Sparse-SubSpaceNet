@@ -38,7 +38,7 @@ from pathlib import Path
 
 # Internal imports
 from src.utils import *
-from src.criterions import (RMSPELoss, MSPELoss, RMSELoss, CartesianLoss, RMSPE, MSPE)
+from src.criterions import RMSPELoss
 from src.methods import MVDR
 from src.methods_pack.music import MUSIC
 from src.methods_pack.root_music import RootMusic
@@ -49,6 +49,7 @@ from src.models import (ModelGenerator, SubspaceNet, DCDMUSIC, DeepAugmentedMUSI
 from src.plotting import plot_spectrum
 from src.system_model import SystemModel
 from src.config.simulation_config import SystemModelParams
+from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method
 
 
 def get_model_based_method(method_name: str, system_model: SystemModel):
@@ -152,7 +153,7 @@ def evaluate_augmented_model(
         model: SubspaceNet,
         dataset,
         system_model,
-        criterion=RMSPE,
+        criterion=RMSPELoss,
         algorithm: str = "music",
         plot_spec: bool = False,
         figures: dict = None,
@@ -246,38 +247,32 @@ def evaluate_augmented_model(
 
 
 def evaluate_model_based(
-        dataset: list,
-        system_model,
-        criterion: RMSPE,
-        plot_spec=False,
-        algorithm: str = "music",
-        figures: dict = None):
+        dataset: DataLoader,
+        system_model: SystemModel,
+        criterion: nn.Module,
+        algorithm: str,
+        cov_recon: CovReconstructor):
     """
     Evaluate different model-based algorithms on a given dataset.
 
     Args:
-        dataset (list): The evaluation dataset.
+        dataset (DataLoader): The evaluation dataset.
         system_model (SystemModel): The system model for the algorithms.
-        criterion: The loss criterion for evaluation. Defaults to RMSPE.
-        plot_spec (bool): Whether to plot the spectrum for the algorithms. Defaults to False.
+        criterion (nn.Module): The loss criterion for evaluation. Defaults to RMSPE.
         algorithm (str): The algorithm to use (e.g., "music", "mvdr", "esprit", "r-music"). Defaults to "music".
-        figures (dict): Dictionary containing figure objects for plotting. Defaults to None.
+        cov_recon (CovReconstructor) : The method to use for the covariance matrix reconstruction
 
     Returns:
-        float: The average evaluation loss.
+        overall_loss (Dict): Dict of evaluation loss and accuracy
 
     Raises:
         Exception: If the algorithm is not supported.
     """
     # Initialize parameters for evaluation
-    loss_list = []
-    loss_list_angle = []
-    loss_list_distance = []
-    acc_list = []
-    if algorithm.lower() == "ccrb":
-        if system_model.params.signal_nature.lower() == "non-coherent":
-            crb = evaluate_crb(dataset, system_model.params, mode="cartesian")
-            return crb
+    overall_loss = 0.0
+    overall_acc = 0.0
+    test_length = 0
+
     model_based = get_model_based_method(algorithm, system_model)
     if isinstance(model_based, nn.Module):
         model_based = model_based.to(device)
@@ -286,139 +281,29 @@ def evaluate_model_based(
     # Gradients calculation isn't required for evaluation
     with torch.no_grad():
         for i, data in enumerate(dataset):
-            x, sources_num, label = data
+            x, sources_num, angles = data
             if x.dim() == 2:
                 x = x.unsqueeze(0)
             x = x.to(device)
-            if max(sources_num) * 2 == label.shape[1]:
-                angles, ranges = torch.split(label, max(sources_num), dim=1)
-                angles = angles.to(device)
-                ranges = ranges.to(device)
-                masks, _ = torch.split(masks, max(sources_num), dim=1)  # TODO
-            else:
-                angles = label  # only angles
-                angles = angles.to(device)
-            # Check if the sources number is the same for all samples in the batch
-            if (sources_num != sources_num[0]).any():
-                # in this case, the sources number is not the same for all samples in the batch
-                raise Exception(f"train_model:"
-                                f" The sources number is not the same for all samples in the batch.")
-            else:
-                sources_num = sources_num[0]
-            # Root-MUSIC algorithms
-            if algorithm.endswith("r-music"):
-                root_music = RootMusic(system_model)
-                if algorithm.startswith("sps"):
-                    # Spatial smoothing
-                    predictions, roots, predictions_all, _, M = root_music.narrowband(
-                        X=x, mode="spatial_smoothing"
-                    )
-                else:
-                    # Conventional
-                    predictions, roots, predictions_all, _, M = root_music.narrowband(
-                        X=x, mode="sample"
-                    )
-                # If the amount of predictions is less than the amount of sources
-                predictions = add_random_predictions(M, predictions, algorithm)
-                # Calculate loss criterion
-                loss = criterion(predictions, doa * R2D)
-                loss_list.append(loss)
-                # Plot spectrum
-                if plot_spec and i == len(dataset.dataset) - 1:
-                    plot_spectrum(
-                        predictions=predictions_all,
-                        true_DOA=doa[0] * R2D,
-                        roots=roots,
-                        algorithm=algorithm.upper(),
-                        figures=figures,
-                    )
-            # MUSIC algorithms
-            elif algorithm.endswith("music_1d"):
-                if algorithm.startswith("bb"):
-                    # Broadband MUSIC
-                    predictions, spectrum, M = model_based(X=x)
-                elif system_model.params.signal_nature == "coherent":
-                    # Spatial smoothing
-                    Rx = model_based.pre_processing(x, mode="sps")
-                elif algorithm.startswith("music"):
-                    # Conventional
-                    Rx = model_based.pre_processing(x, mode="sample")
-                angles_prediction, _, _ = model_based(Rx, number_of_sources=sources_num)
-                # If the amount of predictions is less than the amount of sources
-                # predictions = add_random_predictions(M, predictions, algorithm)
-                # Calculate loss criterion
-                loss = criterion(angles_prediction, angles)
-                loss_list.append(loss / x.shape[0])
+            angles = angles.to(device)
+            validate_constant_sources_number(sources_num)
+            sources_num = sources_num[0]
 
-            # ESPRIT algorithms
-            elif "esprit" in algorithm:
-                # esprit = ESPRIT(system_model)
-                if system_model.params.signal_nature == "coherent":
-                    if system_model.is_sparse_array:
-                        Rx = model_based.pre_processing(x, mode="sparse_sps")
-                    else:
-                    # Spatial smoothing
-                        Rx = model_based.pre_processing(x, mode="sps")
-                else:
-                    # Conventional
-                    if system_model.is_sparse_array:
-                        Rx = model_based.pre_processing(x, mode="sparse")
-                    else:
-                        Rx = model_based.pre_processing(x, mode="sample")
-                angles_prediction, sources_num_estimation, _ = model_based(Rx, sources_num=sources_num)
-                # If the amount of predictions is less than the amount of sources
-                # predictions = add_random_predictions(M, predictions, algorithm)
-                # Calculate loss criterion
-                # if angles.shape[1] != predictions.shape[1]:
-                #     y = angles[0]
-                #     angles, distances = y[:len(y) // 2][None, :], y[len(y) // 2:][None, :]
-                loss = criterion(angles_prediction, angles)
-                loss_list.append(loss.item() / x.shape[0])
-                acc_tmp = torch.mean((sources_num_estimation == sources_num).float()).item()
-                acc_list.append(acc_tmp)
+            cov = cov_recon(x)
+            angles_prediction, source_estimation, _ = model_based(cov, sources_num=sources_num)
+            overall_loss += criterion(angles_prediction, angles).item()
+            overall_acc += torch.sum(source_estimation == sources_num * torch.ones_like(source_estimation).float()).item()
 
-            # MVDR algorithm
-            elif algorithm.startswith("mvdr"):
-                mvdr = MVDR(system_model)
-                # Conventional
-                _, spectrum = mvdr.narrowband(X=X, mode="sample")
-                # Plot spectrum
-                if plot_spec and i == len(dataset.dataset) - 1:
-                    plot_spectrum(
-                        predictions=None,
-                        true_DOA=doa * R2D,
-                        system_model=system_model,
-                        spectrum=spectrum,
-                        algorithm=algorithm.upper(),
-                        figures=figures,
-                    )
-            elif algorithm.endswith("2D-MUSIC"):
-                # if system_model.params.signal_nature == "non-coherent":
-                if system_model.params.signal_nature == "non-coherent":
-                    Rx = model_based.pre_processing(x, mode="sample")
-                else:
-                    Rx = model_based.pre_processing(x, mode="sps")
-                predictions, sources_num_estimation, _ = model_based(Rx, number_of_sources=sources_num)
-                angles_prediction, ranges_prediction = predictions
-                if isinstance(criterion, RMSPELoss):
-                    rmspe, rmspe_angle, rmspe_distance = criterion(angles_prediction, angles, ranges_prediction, ranges)
-                    loss_list_angle.append(rmspe_angle.item() / x.shape[0])
-                    loss_list_distance.append(rmspe_distance.item() / x.shape[0])
-                else:
-                    rmspe = criterion(angles_prediction, angles, ranges_prediction, ranges)
-                loss_list.append(rmspe.item() / x.shape[0])
-                acc_tmp = torch.mean((sources_num_estimation == sources_num).float()).item()
-                acc_list.append(acc_tmp)
-
+            if data[0].dim() == 2:
+                test_length += 1
             else:
-                warnings.warn(f"evaluate_augmented_model: Algorithm {algorithm} is not supported.")
-        result = {"Overall": torch.mean(torch.Tensor(loss_list)).item()}
-        if loss_list_angle and loss_list_distance:
-            result["Angle"] = torch.mean(torch.Tensor(loss_list_angle)).item()
-            result["Distance"] = torch.mean(torch.Tensor(loss_list_distance)).item()
-        if acc_list:
-            result["Accuracy"] = torch.mean(torch.Tensor(acc_list)).item()
-    return result
+                test_length += data[0].shape[0]
+
+        overall_loss /= test_length
+        overall_acc /= test_length
+        overall_loss = {"Angle": overall_loss,
+                        "Accuracy": overall_acc}
+        return overall_loss
 
 
 def add_random_predictions(M: int, predictions: np.ndarray, algorithm: str):
@@ -527,17 +412,17 @@ def evaluate_mle(dataset: list, system_model: SystemModel, criterion):
 
 
 def evaluate(
-        generic_test_dataset: list,
+        generic_test_dataset: DataLoader,
         criterion: nn.Module,
         system_model: SystemModel,
-        figures: dict,
-        plot_spec: bool = True,
         models: dict = None,
         augmented_methods: list = None,
         subspace_methods: list = None,
-        model_tmp: nn.Module = None
-):
+        model_tmp: nn.Module = None,
+        cov_recon_method = 'sample',
+        cov_recon_params: dict = None):
     """
+    TODO: Update docs
     Wrapper function for model and algorithm evaluations.
 
     Parameters:
@@ -574,35 +459,35 @@ def evaluate(
         model_test_loss = evaluate_dnn_model(model_tmp, generic_test_dataset)
         print(f"{model_name} evaluation time: {time.time() - start}")
         res[model_name] = model_test_loss
-    # Evaluate SubspaceNet augmented methods
-    for algorithm in augmented_methods:
-        loss = evaluate_augmented_model(
-            model=model,
-            dataset=generic_test_dataset,
-            system_model=system_model,
-            criterion=criterion,
-            algorithm=algorithm,
-            plot_spec=plot_spec,
-            figures=figures,
-        )
-        res["augmented" + algorithm] = loss
+
+    # Evaluate SubspaceNet augmented methods  #TODO: FIX and cleanup augmented methods
+    # for algorithm in augmented_methods:
+    #     loss = evaluate_augmented_model(
+    #         model=model,
+    #         dataset=generic_test_dataset,
+    #         system_model=system_model,
+    #         criterion=criterion,
+    #         algorithm=algorithm,
+    #         plot_spec=plot_spec,
+    #         figures=figures,
+    #     )
+    #     res["augmented" + algorithm] = loss
+
     # Evaluate classical subspace methods
+    cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
     for algorithm in subspace_methods:
         start = time.time()
         loss = evaluate_model_based(
             generic_test_dataset,
             system_model,
             criterion=criterion,
-            plot_spec=plot_spec,
             algorithm=algorithm,
-            figures=figures)
+            cov_recon=cov_recon)
         if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
             algorithm += "(SPS)"
         print(f"{algorithm} evaluation time: {time.time() - start}")
         res[algorithm] = loss
-    # MLE
-    # mle_loss = evaluate_mle(generic_test_dataset, system_model, criterion)
-    # res["MLE"] = mle_loss
+
     for method, loss_ in res.items():
         print(f"{method.upper() + ' test loss' : <30} = {loss_}")
     return res

@@ -17,13 +17,13 @@ class SimulationCommands:
 
 @dataclass
 class SystemModelParams:
-    N: int                                      # Number of Antennas
-    M: Any                                      # Number of targets
-    T: int                                      # Snapshots
-    snr: Any                                    # in dB
-    field_type: str                             # ['Far', 'Near']
-    signal_nature: str                          # ['coherent', 'non-coherent']
-    array_form: str                             # ['ula', 'mra-4', 'mra-5', 'mra-6', 'mra-7', 'mra-8']
+    N: int  # Number of Antennas
+    M: Any  # Number of targets
+    T: int  # Snapshots
+    snr: Any  # in dB
+    field_type: str  # ['Far', 'Near']
+    signal_nature: str  # ['coherent', 'non-coherent']
+    array_form: str  # ['ula', 'mra-4', 'mra-5', 'mra-6', 'mra-7', 'mra-8']
     signal_type: str = "NarrowBand"
     eta: float = 0.0
     bias: float = 0.0
@@ -37,6 +37,7 @@ class SystemModelParams:
         self.M = normalize_range_param(self.M)
         self.snr = normalize_range_param(self.snr)
         self.doa_range = tuple(self.doa_range)
+
 
 @dataclass
 class TrainingParams:
@@ -57,18 +58,32 @@ class TrainingParams:
     true_doa_test: Optional[list] = None
     true_range_test: Optional[list] = None
 
+
 @dataclass
 class EvaluationParams:
     criterion: str = "rmspe"
     balance_factor: float = 1.0
+    covariance_reconstruction: str = 'sample'
     models: Optional[Dict[str, Dict[str, Any]]] = field(default_factory=dict)
     augmented_methods: Optional[list] = field(default_factory=list)
     subspace_methods: Optional[list] = field(default_factory=list)
+
 
 @dataclass
 class ModelConfig:
     model_type: str
     model_params: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ADMMCovarianceReconstructionParams:
+    mu: float = 2.5e-3
+    rho: float = 2
+    max_iter: int = 500
+    tol_primal: float = 1e-7
+    tol_dual: float = 1e-7
+    verbose: bool = True
+
 
 @dataclass
 class SimulationConfig:
@@ -77,6 +92,7 @@ class SimulationConfig:
     training: TrainingParams
     evaluation: EvaluationParams
     commands: SimulationCommands
+    admm_params: ADMMCovarianceReconstructionParams
     scenario: Optional[Dict[str, list]] = field(default_factory=dict)
 
 

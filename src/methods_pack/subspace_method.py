@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 from src.utils import *
 from src.system_model import SystemModel
-from src.sparse_covariance import SparseCovariance
+from src.sparse_covariance import SparseCovarianceCVXPY, SparseCovarianceADMM
 
 
 class SubspaceMethod(nn.Module):
@@ -201,137 +201,6 @@ class SubspaceMethod(nn.Module):
 
     def __get_eigen_threshold(self):
         return self.eigen_threshold
-
-    def pre_processing(self, x: torch.Tensor, mode: str = "sample"):
-        if mode == "sample":
-            Rx = self.__sample_covariance(x)
-        elif mode == "sps":
-            Rx = self.__spatial_smoothing_covariance(x)
-        elif mode == "sparse":
-            Rx = self.__virtual_array_covariance(x)
-            # R_xx = self.__sample_covariance(x)
-            # cov_optimizer = SparseCovariance(self.system_model)
-            # Rx = cov_optimizer(R_xx)
-            # if Rx.dim() != R_xx.dim():
-            #     Rx = Rx.unsqueeze(0)
-
-        elif mode == "sparse_sps":
-            Rx = self.__virtual_array_covariance(x)
-            Rx = self.__spatial_smoothing_coarray_cov(Rx)
-
-        else:
-            raise ValueError(
-                f"SubspaceMethod.pre_processing: method {mode} is not recognized for covariance calculation.")
-
-        return Rx.to(device=x.device)
-
-    def __sample_covariance(self, x: torch.Tensor):
-        """
-        Calculates the sample covariance matrix.
-
-        Args:
-        -----
-            X (torch.Tensor): Input samples matrix.
-
-        Returns:
-        --------
-            Rx (torch.Tensor): Covariance matrix.
-        """
-        if x.dim() == 2:
-            x = x[None, :, :]
-        batch_size, sensor_number, samples_number = x.shape
-        Rx = torch.einsum("bmt, btl -> bml", x, torch.conj(x).transpose(1, 2)) / samples_number
-        return Rx
-
-    def __virtual_array_covariance(self, x: torch.Tensor):
-        """
-        Calculates the virtual array covariance matrix, based on the paper: "Remarks on the Spatial Smoothing Step in
-        Coarray MUSIC"
-
-         Parameters
-         ----------
-          X (torch.Tensor): Input samples matrix.
-          system_model (SystemModel): settings of the system model
-
-        Returns
-        -------
-        Rx (torch.Tensor): virtual array's covariance matrix
-
-        """
-        R_real_array = self.__sample_covariance(x)
-
-        L = len(self.system_model.virtual_array)
-        Rx = torch.zeros(R_real_array.shape[0], L, L, dtype=torch.complex128)
-        differences_array = self.system_model.array[:, None] - self.system_model.array[None, :]
-        x_s_diff = torch.zeros(x.shape[0], 2*L - 1, dtype=torch.complex128)  # x.shape[0] = batch size
-        max_sensor = np.max(self.system_model.virtual_array)
-
-        for i, lag in enumerate(range(-max_sensor, max_sensor + 1)):
-            pairs = torch.from_numpy(differences_array) == lag
-            if pairs.any():
-                x_s_diff[:, i] = torch.mean(R_real_array[:, pairs], dim=1)
-
-        for j in range(L):
-            start_idx = L - 1 - j
-            Rx[:, :, j] = x_s_diff[:, start_idx:start_idx + L]
-
-        return Rx
-
-    def __ss_virtual_array_covariance(self, x: torch.Tensor):
-        R = self.__virtual_array_covariance(x)
-        L = len(self.system_model.virtual_array)
-        return (R@R) / L
-
-
-    def __spatial_smoothing_covariance(self, x: torch.Tensor, sub_array_size=None):
-        """
-        Calculates the covariance matrix using forward–backward spatial smoothing technique.
-
-        Args:
-        -----
-            x (torch.Tensor): Input samples matrix with shape
-                              (batch_size, sensor_number, samples_number).
-
-        Returns:
-        --------
-            Rx_smoothed (torch.Tensor): Smoothed covariance matrix.
-        """
-
-        # Ensure x has three dimensions (batch, sensors, samples)
-        if x.dim() == 2:
-            x = x.unsqueeze(0)
-        batch_size, sensor_number, samples_number = x.shape
-
-        # Define subarray size and the number of overlapping subarrays
-        if sub_array_size is None:
-            sub_array_size = sensor_number // 2 + 1
-
-        number_of_sub_arrays = sensor_number - sub_array_size + 1
-
-        # Initialize the smoothed covariance matrix
-        Rx_smoothed = torch.zeros(batch_size, sub_array_size, sub_array_size,
-                                  dtype=torch.complex128, device=x.device)
-
-        for j in range(number_of_sub_arrays):
-            # Extract the j-th subarray
-            x_sub = x[:, j:j + sub_array_size, :]
-
-            # Forward covariance calculation
-            cov_forward = torch.einsum("bmt, btl -> bml", x_sub,
-                                       torch.conj(x_sub).transpose(1, 2)) / (samples_number - 1)
-
-            # backward processing: take the complex conjugate before flipping
-            x_sub_back = torch.flip(torch.conj(x_sub), dims=[1])
-            cov_backward = torch.einsum("bmt, btl -> bml", x_sub_back,
-                                        torch.conj(x_sub_back).transpose(1, 2)) / (samples_number - 1)
-
-            # Average the forward and backward covariances for this subarray
-            cov_fb = 0.5 * (cov_forward + cov_backward)
-
-            # Aggregate over all subarrays
-            Rx_smoothed += cov_fb / number_of_sub_arrays
-
-        return Rx_smoothed
 
     @staticmethod
     def __spatial_smoothing_coarray_cov(R_coarray: torch.Tensor, sub_array_size: int = None) -> torch.Tensor:

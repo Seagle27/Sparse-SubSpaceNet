@@ -1,6 +1,6 @@
 system_model:
   N: 7
-  M: [7,15]
+  M: 10
   T: 500
   snr: 10
   eta: 0.0
@@ -18,9 +18,11 @@ model:
   model_params:
     tau: 8
     diff_method: "esprit"
+    criterion: "rmspe"
+
 
 training:
-  samples_size: 40980
+  samples_size: 20480
   train_test_ratio: 0.1
   epochs: 180
   batch_size: 256
@@ -31,7 +33,6 @@ training:
   gamma: 0.5
   scheduler: "StepLR"   # ReduceLROnPlateau
   training_objective: "angle"
-  criterion: "rmspe"
   balance_factor: 1.0
   true_doa_train: null
   true_range_train: null
@@ -41,6 +42,7 @@ training:
 evaluation:
   criterion: "rmspe"
   balance_factor: 1.0
+  covariance_reconstruction: "admm_cvxpy"    # [averaging, admm, admm_cvxpy]
 #  models:
 #    SparseNet:
 #      tau: 8
@@ -48,15 +50,22 @@ evaluation:
   augmented_methods: []
   subspace_methods: ["esprit"]
 
+admm_params:
+  mu: 2.5e-3
+  rho:  2
+  max_iter: 500
+  tol_primal: 1e-7
+  tol_dual: 1e-7
+
 commands:
   create_data: true
   save_dataset: false
-  train_model: true
+  train_model: false
   save_model: true
   evaluate_mode: true
-  plot_results: true
+  plot_results: false
   save_plots: false
 
 # Optional scenario sweep:
 #scenario:
-#  eta: [0.03]
+#  M: [5,6,7,8,9,10,11,12,13,14,15]

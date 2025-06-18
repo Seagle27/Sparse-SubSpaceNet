@@ -1,5 +1,6 @@
 from pathlib import Path
 from datetime import datetime
+from dataclasses import asdict
 import sys
 import torch
 
@@ -84,12 +85,12 @@ class SimulationRunner:
             generic_test_dataset=test_loader,
             criterion=criterion,
             system_model=system_model,
-            figures=figures,
-            plot_spec=False,
             models=config.evaluation.models,
             augmented_methods=config.evaluation.augmented_methods,
             subspace_methods=config.evaluation.subspace_methods,
-            model_tmp=model
+            model_tmp=model,
+            cov_recon_method=config.evaluation.covariance_reconstruction,
+            cov_recon_params=asdict(config.admm_params)
         )
 
     def _run_single_simulation(self):
