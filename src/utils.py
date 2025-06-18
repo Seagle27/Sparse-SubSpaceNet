@@ -471,14 +471,14 @@ def toeplitz_proj(H: Tensor) -> Tensor:
 
 def psd_proj(T: Tensor) -> Tensor:
     lam, U = torch.linalg.eigh(T)
-    lam.clamp_(min=0.0)
-    return (U * lam.unsqueeze(-2)) @ U.transpose(-2, -1).conj()
+    lam_clipped = torch.clamp(lam, min=0.0)
+    return (U * lam_clipped.unsqueeze(-2)) @ U.transpose(-2, -1).conj()
 
 
-def svt(Z: Tensor, tau: float) -> Tensor:
+def svt(Z: Tensor, tau) -> Tensor:
     U, s, Vh = torch.linalg.svd(Z)
-    s = torch.clamp(s - tau, min=0.0)
-    return (U * s.unsqueeze(-2)) @ Vh
+    s_shrink = torch.clamp(s - tau, min=0.0)
+    return (U * s_shrink.unsqueeze(-2)) @ Vh
 
 
 if __name__ == "__main__":

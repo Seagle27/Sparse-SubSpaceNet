@@ -12,7 +12,7 @@ from src.criterions import EigenRegularizationLoss
 from src.methods_pack.music import MUSIC
 from src.methods_pack.esprit import ESPRIT
 from src.methods_pack.root_music import RootMusic
-
+from src.criterions import set_criterions
 
 class SubspaceNet(ParentModel):
     """SubspaceNet is model-based deep learning model for generalizing DOA estimation problem,
@@ -54,6 +54,7 @@ class SubspaceNet(ParentModel):
 
         """
         super(SubspaceNet, self).__init__(system_model, criterion)
+        self.criterion = set_criterions(criterion.lower())
         self.tau = tau
         self.N = self.system_model.params.N
         self.diff_method = None
@@ -72,7 +73,7 @@ class SubspaceNet(ParentModel):
         # Set the subspace method for training
         self.set_diff_method(diff_method, system_model)
 
-    def get_surrogate_covariance(self, X: torch.Tensor) -> torch.Tensor:
+    def get_learned_covariance(self, X: torch.Tensor) -> torch.Tensor:
         """
             This function is the "real" forward pass of the SubspaceNet.
             It receives the input tensor and returns the surrogate covariance matrix.
@@ -139,7 +140,7 @@ class SubspaceNet(ParentModel):
         """
 
         # Feed surrogate covariance to the differentiable subspace algorithm
-        Rz = self.get_surrogate_covariance(x)
+        Rz = self.get_learned_covariance(x)
 
         if self.field_type == "Far":
             method_output = self.diff_method(Rz, sources_num)
@@ -273,14 +274,3 @@ class SubspaceNet(ParentModel):
 
     def test_step(self, batch):
         return self.validation_step(batch)
-
-    @staticmethod
-    def _prepare_batch(batch):
-        x, sources_num, angles = batch
-        if x.dim() == 2:
-            x = x.unsqueeze(0)
-        x = x.to(device)
-        angles = angles.to(device)
-        source_num = sources_num.to(device)
-        validate_constant_sources_number(sources_num)
-        return x, source_num[0], angles

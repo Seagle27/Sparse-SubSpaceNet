@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 
 from src.utils import *
 from src.system_model import SystemModel
-from src.sparse_covariance import SparseCovarianceCVXPY, SparseCovarianceADMM
 
 
 class SubspaceMethod(nn.Module):

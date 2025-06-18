@@ -126,9 +126,14 @@ def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str="valid")
     with (torch.no_grad()):
         for data in dataset:
             if mode == "valid":
-                eval_loss, acc = model.validation_step(data)
+                eval_loss = model.validation_step(data)
             else:
-                eval_loss, acc = model.test_step(data)
+                eval_loss = model.test_step(data)
+
+            if isinstance(eval_loss, tuple):
+                eval_loss, acc = eval_loss
+            else:
+                acc = None
 
             overall_loss_angle += torch.sum(eval_loss).item()
             if acc is not None:

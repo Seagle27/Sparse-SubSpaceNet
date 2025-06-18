@@ -439,12 +439,19 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
             train_length = 0
 
             for data in training_params.train_dataset:
-                loss, acc, eigen_regularization = model.training_step(data)
+                loss = model.training_step(data)
+                if isinstance(loss, tuple):
+                    loss, acc, eigen_regularization = loss
+                else:
+                    acc, eigen_regularization = None, None
+
                 epoch_train_loss += loss.item()
-                epoch_train_acc += acc
-                train_length += data[0].shape[0]
+                if acc is not None:
+                    epoch_train_acc += acc
                 if eigen_regularization is not None:
                     epoch_train_reg_loss += torch.sum(eigen_regularization).item()
+
+                train_length += data[0].shape[0]
 
                 try:
                     loss.backward()  # retain_graph=True

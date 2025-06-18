@@ -13,19 +13,26 @@ system_model:
   doa_range: [-70, 70]
   min_gap: 5
 
+#model:
+#  model_type: "SparseNet"
+#  model_params:
+#    tau: 8
+#    diff_method: "esprit"
+#    criterion: "rmspe"
+
 model:
-  model_type: "SparseNet"
+  model_type: "LearnedADMM"
   model_params:
-    tau: 8
-    diff_method: "esprit"
+    num_iterations: 10
+    subspace_method: "esprit"
     criterion: "rmspe"
 
 
 training:
-  samples_size: 20480
+  samples_size: 4096
   train_test_ratio: 0.1
-  epochs: 180
-  batch_size: 256
+  epochs: 30
+  batch_size: 128
   optimizer: "Adam"
   learning_rate: 0.001
   weight_decay: 1e-9
@@ -42,7 +49,7 @@ training:
 evaluation:
   criterion: "rmspe"
   balance_factor: 1.0
-  covariance_reconstruction: "admm_cvxpy"    # [averaging, admm, admm_cvxpy]
+  covariance_reconstruction: "admm"    # [averaging, admm, admm_cvxpy]
 #  models:
 #    SparseNet:
 #      tau: 8
@@ -53,17 +60,17 @@ evaluation:
 admm_params:
   mu: 2.5e-3
   rho:  2
-  max_iter: 500
+  max_iter: 10
   tol_primal: 1e-7
   tol_dual: 1e-7
 
 commands:
   create_data: true
   save_dataset: false
-  train_model: false
+  train_model: true
   save_model: true
   evaluate_mode: true
-  plot_results: false
+  plot_results: true
   save_plots: false
 
 # Optional scenario sweep:

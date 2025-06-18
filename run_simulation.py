@@ -74,7 +74,7 @@ class SimulationRunner:
             shuffle=False
         )
 
-        criterion, _ = set_criterions(
+        criterion = set_criterions(
             config.evaluation.criterion,
             config.evaluation.balance_factor
         )

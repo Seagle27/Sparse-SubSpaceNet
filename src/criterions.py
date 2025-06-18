@@ -339,7 +339,60 @@ class CartesianLoss(nn.Module):
         #     loss.append(torch.min(torch.stack(loss_per_sample, dim=0)))
         # if (loss_[0] != torch.stack(loss, dim=0)).all():
         #     raise ValueError("Error in Cartesian Loss")
-def set_criterions(criterion_name: str, balance_factor: float = 0.0):
+
+
+class ADMMObjective(nn.Module):
+    r"""
+    Unsupervised loss for training an unfolded-ADMM reconstructor:
+
+        ℒ(R̂; Rx) = ‖Φ R̂ Φᴴ − Rx‖_F²  +  μ · ‖R̂‖_* .
+
+    * **data-fit term** forces R̂ to agree with the measured sub-array
+      covariance.
+    * **nuclear-norm term** keeps R̂ low-rank (signal subspace).
+
+    Parameters
+    ----------
+    system_model : SystemModel
+        Provides `.array` (physical indices) and `.virtual_array`
+        (contiguous co-array indices) so we can build Φ.
+    mu : float
+        Weight on the nuclear-norm term.
+    """
+
+    def __init__(self, phi, mu: float = 2.5e-3) -> None:
+        super().__init__()
+        self.mu = mu
+
+        self.register_buffer("phi",   phi)        # (|S|,|U|)
+        self.register_buffer("phi_H", phi.t())    # (|U|,|S|)
+
+    # ------------------------------------------------------------------
+    def forward(self,
+                R_hat: Tensor,    # (B, |U|, |U|)
+                Rx:     Tensor    # (B, |S|, |S|)
+                ) -> Tensor:
+        """
+        Returns a *scalar* loss (mean over batch).
+
+        Both tensors must share the same `dtype` / `device`.
+        """
+        phi  = self.phi.to(R_hat)
+        phi_H = self.phi_H.to(R_hat)
+
+        # data-fit Frobenius term
+        residual = phi @ R_hat @ phi_H - Rx       # (B, |S|, |S|)
+        data_fit = residual.flatten(1).norm(dim=1, p=2).pow(2)  # (B,)
+
+        # nuclear norm  ‖R̂‖_*
+        _, s, _ = torch.linalg.svd(R_hat, full_matrices=False)
+        nuc = s.sum(dim=1)                       # (B,)
+
+        loss = data_fit + self.mu * nuc
+        return loss.mean()                       # scalar
+
+
+def set_criterions(criterion_name: str, *args):
     """
     Set the loss criteria based on the criterion name.
 
@@ -354,24 +407,19 @@ def set_criterions(criterion_name: str, balance_factor: float = 0.0):
         Exception: If the criterion name is not defined.
     """
     if criterion_name.startswith("rmspe"):
-        criterion = RMSPELoss(balance_factor)
-        subspace_criterion = RMSPELoss(balance_factor)
-    elif criterion_name.startswith("mspe"):
-        criterion = MSPELoss()
-        subspace_criterion = MSPE
+        criterion = RMSPELoss()
     elif criterion_name.startswith("mse"):
         criterion = nn.MSELoss()
-        subspace_criterion = MSPE
     elif criterion_name.startswith("rmse"):
-        criterion = RMSPELoss(balance_factor)
-        subspace_criterion = RMSPELoss(balance_factor)
+        criterion = RMSPELoss()
     elif criterion_name.startswith("cartesian"):
         criterion = CartesianLoss()
-        subspace_criterion = CartesianLoss()
+    elif criterion_name == "admm_objective":
+        criterion = ADMMObjective(*args)
     else:
         raise Exception(f"criterions.set_criterions: Criterion {criterion_name} is not defined")
     print(f"Loss measure = {criterion_name}")
-    return criterion, subspace_criterion
+    return criterion
 
 
 class EigenRegularizationLoss:

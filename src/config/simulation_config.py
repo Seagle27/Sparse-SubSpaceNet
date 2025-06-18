@@ -82,7 +82,7 @@ class ADMMCovarianceReconstructionParams:
     max_iter: int = 500
     tol_primal: float = 1e-7
     tol_dual: float = 1e-7
-    verbose: bool = True
+    verbose: bool = False
 
 
 @dataclass
