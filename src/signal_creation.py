@@ -177,7 +177,7 @@ class Samples(SystemModel):
         if self.params.signal_type.startswith("NarrowBand"):
             if self.params.field_type.startswith("Far"):
                 if self.antenna_pattern_data:
-                    A = self.antenna_pattern_steering_vec(self.doa, self.antenna_pattern_data).T
+                    A = np.array([self.steering_vec(theta, pattern_data=self.antenna_pattern_data) for theta in self.doa]).T
                 else:
                     A = np.array([self.steering_vec(theta) for theta in self.doa]).T
                 samples = (A @ signal) + noise
