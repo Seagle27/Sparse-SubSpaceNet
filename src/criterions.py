@@ -360,14 +360,13 @@ class ADMMObjective(nn.Module):
         Weight on the nuclear-norm term.
     """
 
-    def __init__(self, phi, mu: float = 2.5e-3) -> None:
+    def __init__(self, array, virtual_array, mu: float = 2.5e-3) -> None:
         super().__init__()
         self.mu = mu
+        self.phi = build_phi(array, virtual_array)
+        self.phi_H = self.phi.t()
 
-        self.register_buffer("phi",   phi)        # (|S|,|U|)
-        self.register_buffer("phi_H", phi.t())    # (|U|,|S|)
 
-    # ------------------------------------------------------------------
     def forward(self,
                 R_hat: Tensor,    # (B, |U|, |U|)
                 Rx:     Tensor    # (B, |S|, |S|)

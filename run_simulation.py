@@ -76,7 +76,8 @@ class SimulationRunner:
 
         criterion = set_criterions(
             config.evaluation.criterion,
-            config.evaluation.balance_factor
+            system_model.array,
+            system_model.virtual_array,
         )
 
         figures = initialize_figures()

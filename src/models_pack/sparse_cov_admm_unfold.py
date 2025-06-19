@@ -21,7 +21,7 @@ class SparseCovADMMUnfold(ParentModel):
 
         self.phi = build_phi(self.system_model.array, self.system_model.virtual_array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
-        self.criterion = set_criterions(criterion, self.phi)
+        self.criterion = set_criterions(criterion, self.system_model.array, self.system_model.virtual_array)
 
         self.U = self.phi.shape[1]  # |U|
 
@@ -30,9 +30,10 @@ class SparseCovADMMUnfold(ParentModel):
         self.P = (m[:, None] * m[None, :]).flatten()  # (|U|²,)
 
         # ---- Learned parameters ----
-        self.rho_m = nn.Parameter(torch.ones(self.num_iter,))
-        self.rho_r = nn.Parameter(torch.ones(self.num_iter,))
+        self.rho = nn.Parameter(torch.ones(self.num_iter,))
         self.tau = nn.Parameter(torch.ones(self.num_iter,))
+        self.mu_u = nn.Parameter(torch.ones(self.num_iter,))
+        self.mu_v = nn.Parameter(torch.ones(self.num_iter,))
 
     def get_learned_covariance(self, x: torch.Tensor) -> torch.Tensor:
         Rx = sample_covariance(x)
@@ -66,9 +67,9 @@ class SparseCovADMMUnfold(ParentModel):
 
         for k in range(self.num_iter):
             # R-update  (diagonal solve, batched)
-            rhs = vec_meas + self.rho_r[k] * (S - Udual + T - Vdual).reshape(B, -1)
+            rhs = vec_meas + self.rho[k] * (S - Udual + T - Vdual).reshape(B, -1)
 
-            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2.0 * self.rho_m[k])
+            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2.0 * self.rho[k])
             inv_coeff = inv_coeff.expand(B, -1)
 
             vec_R = inv_coeff * rhs
@@ -83,8 +84,8 @@ class SparseCovADMMUnfold(ParentModel):
             T = psd_proj(toeplitz_proj(hermitian_proj(W)))
 
             # dual ascent
-            Udual += R - S
-            Vdual += R - T
+            Udual += self.mu_u[k] * (R - S)
+            Vdual += self.mu_v[k] * (R - T)
 
             S_prev.copy_(S)
             T_prev.copy_(T)
@@ -112,10 +113,7 @@ class SparseCovADMMUnfold(ParentModel):
         return self.training_step(batch)
 
     def test_step(self, batch):
-        x, sources_num, angles = self._prepare_batch(batch)
-        doa_prediction = self(x, sources_num)
-        loss = self.criterion(doa_prediction, angles)
-        return loss
+        return self.validation_step(batch)
 
     @staticmethod
     def get_model_based_method(method_name: str, system_model: SystemModel):

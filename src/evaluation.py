@@ -38,7 +38,7 @@ from pathlib import Path
 
 # Internal imports
 from src.utils import *
-from src.criterions import RMSPELoss
+from src.criterions import RMSPELoss, ADMMObjective
 from src.methods import MVDR
 from src.methods_pack.music import MUSIC
 from src.methods_pack.root_music import RootMusic
@@ -49,7 +49,7 @@ from src.models import (ModelGenerator, SubspaceNet, DCDMUSIC, DeepAugmentedMUSI
 from src.plotting import plot_spectrum
 from src.system_model import SystemModel
 from src.config.simulation_config import SystemModelParams
-from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method
+from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
 
 
 def get_model_based_method(method_name: str, system_model: SystemModel):
@@ -311,6 +311,34 @@ def evaluate_model_based(
         return overall_loss
 
 
+def evaluate_admm_convergence(dataset: DataLoader,
+                              criterion: nn.Module,
+                              cov_recon: CovReconstructor):
+    # Initialize parameters for evaluation
+    overall_loss = 0.0
+    test_length = 0
+
+    # Gradients calculation isn't required for evaluation
+    with torch.no_grad():
+        for i, data in enumerate(dataset):
+            x, sources_num, _ = data
+            if x.dim() == 2:
+                x = x.unsqueeze(0)
+            x = x.to(device)
+            validate_constant_sources_number(sources_num)
+
+            cov = cov_recon(x)
+            Rx = sample_covariance(x)
+            overall_loss += criterion(cov, Rx)
+            if data[0].dim() == 2:
+                test_length += 1
+            else:
+                test_length += data[0].shape[0]
+
+        overall_loss /= test_length
+        return overall_loss
+
+
 def add_random_predictions(M: int, predictions: np.ndarray, algorithm: str):
     """
     Add random predictions if the number of predictions is less than the number of sources.
@@ -480,18 +508,22 @@ def evaluate(
 
     # Evaluate classical subspace methods
     cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
-    for algorithm in subspace_methods:
-        start = time.time()
-        loss = evaluate_model_based(
-            generic_test_dataset,
-            system_model,
-            criterion=criterion,
-            algorithm=algorithm,
-            cov_recon=cov_recon)
-        if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
-            algorithm += "(SPS)"
-        print(f"{algorithm} evaluation time: {time.time() - start}")
-        res[algorithm] = loss
+    if isinstance(criterion, ADMMObjective):
+        loss = evaluate_admm_convergence(generic_test_dataset, criterion, cov_recon)
+        res[cov_recon.__class__.__name__] = loss
+    else:
+        for algorithm in subspace_methods:
+            start = time.time()
+            loss = evaluate_model_based(
+                generic_test_dataset,
+                system_model,
+                criterion=criterion,
+                algorithm=algorithm,
+                cov_recon=cov_recon)
+            if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
+                algorithm += "(SPS)"
+            print(f"{algorithm} evaluation time: {time.time() - start}")
+            res[algorithm] = loss
 
     for method, loss_ in res.items():
         print(f"{method.upper() + ' test loss' : <30} = {loss_}")
