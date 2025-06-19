@@ -56,16 +56,20 @@ class SubspaceNet(ParentModel):
         self.N = self.system_model.params.N
         self.diff_method = None
         self.field_type = field_type
-        self.p = 0.1
+        self.p = 0.2
         self.conv1 = nn.Conv2d(self.tau, 16, kernel_size=2)
         self.conv2 = nn.Conv2d(32, 32, kernel_size=2)
         self.conv3 = nn.Conv2d(64, 64, kernel_size=2)
+        self.conv4 = nn.Conv2d(128, 128, kernel_size=2)
+
+        self.deconv1 = self.deconv2 = nn.ConvTranspose2d(256, 64, kernel_size=2)
         self.deconv2 = nn.ConvTranspose2d(128, 32, kernel_size=2)
         self.deconv3 = nn.ConvTranspose2d(64, 16, kernel_size=2)
         self.deconv4 = nn.ConvTranspose2d(32, 1, kernel_size=2)
         self.DropOut = nn.Dropout(self.p)
         self.ReLU = nn.ReLU()
         self.norm1 = SpectralNormalization()
+        self.skip_connection = LearnableSkipConnection(1e-1)
 
         # Set the subspace method for training
         self.set_diff_method(diff_method, system_model)
@@ -80,14 +84,16 @@ class SubspaceNet(ParentModel):
             Returns:
                 Rz: the surrogate covariance matrix of shape [Batch size, N, N]
         """
-        x = self.pre_processing(X)
         # Rx_tau shape: [Batch size, tau, 2N, N]
-        N = x.shape[-1]
-        self.batch_size = x.shape[0]
+        x0 = self.pre_processing(X)
+        self.batch_size, _, _, N = x0.shape
+
+        empirical_cov = torch.complex(x0[:, 0, :N], x0[:, 0, N:])
         ############################
+
         ## Architecture flow ##
         # CNN block #1
-        x = self.conv1(x)
+        x = self.conv1(x0)
         x = self.anti_rectifier(x)
         # CNN block #2
         x = self.conv2(x)
@@ -95,7 +101,12 @@ class SubspaceNet(ParentModel):
         # CNN block #3
         x = self.conv3(x)
         x = self.anti_rectifier(x)
+        # CNN block #4
+        x = self.conv4(x)
+        x = self.anti_rectifier(x)
 
+        x = self.deconv1(x)
+        x = self.anti_rectifier(x)
         x = self.deconv2(x)
         x = self.anti_rectifier(x)
         # DCNN block #3
@@ -110,11 +121,12 @@ class SubspaceNet(ParentModel):
         Rx_real = Rx_View[:, :N, :]  # Shape: [Batch size, N, N])
         Rx_imag = Rx_View[:, N:, :]  # Shape: [Batch size, N, N])
         Kx_tag = torch.complex(Rx_real, Rx_imag)  # Shape: [Batch size, N, N])
-        # Kx_tag = self.norm1(Kx_tag)
+        Kx_tag = self.norm1(Kx_tag)
         # Apply Gram operation diagonal loading
         Rz = gram_diagonal_overload(
             Kx=Kx_tag, eps=1, batch_size=self.batch_size
         )  # Shape: [Batch size, N, N]
+        Rz = self.skip_connection(Rz, empirical_cov)
         return Rz
 
     def forward(self, x: torch.Tensor, sources_num: torch.tensor = None, known_angles: torch.tensor = None):

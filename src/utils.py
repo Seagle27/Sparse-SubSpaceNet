@@ -434,6 +434,20 @@ class SpectralNormalization(nn.Module):
         return K_hat
 
 
+class LearnableSkipConnection(nn.Module):
+    def __init__(self, alpha: float = 0.0):
+        """Initializes the learnable skip connection.
+        Args:
+            alpha (float): Initial value for the learnable parameter.
+        """
+        super(LearnableSkipConnection, self).__init__()
+        self.alpha = nn.Parameter(torch.tensor(alpha), requires_grad=True)
+
+    def forward(self, x1, x2):
+        return x1 + torch.clamp(self.alpha, min=0.0, max=1.0) * x2
+
+    def __repr__(self):
+        return f"LearnableSkipConnection(alpha={self.alpha.item()})"
 
 
 if __name__ == "__main__":
