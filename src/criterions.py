@@ -555,7 +555,7 @@ def set_criterions(criterion_name: str, balance_factor: float = 0.0):
 
 
 class EigenRegularizationLoss:
-    EIGEN_REGULARIZATION_WEIGHT = 1e-1
+    EIGEN_REGULARIZATION_WEIGHT = 1
 
     def __init__(self, init_value=EIGEN_REGULARIZATION_WEIGHT):
         self._eigenregularization_weight = init_value
