@@ -471,9 +471,10 @@ def toeplitz_proj(H: Tensor) -> Tensor:
 
 def psd_proj(T: Tensor) -> Tensor:
     lam, U = torch.linalg.eigh(T)
-    U_fix = U.detach()
+    phase = U[..., 0, :].angle()
+    U = U * torch.exp(-1j * phase)[..., None, :]
     lam_clipped = torch.clamp(lam, min=0.0)
-    return (U_fix * lam_clipped.unsqueeze(-2)) @ U_fix.transpose(-2, -1).conj()
+    return (U * lam_clipped.unsqueeze(-2)) @ U.transpose(-2, -1).conj()
 
 
 def svt(Z: Tensor, tau) -> Tensor:

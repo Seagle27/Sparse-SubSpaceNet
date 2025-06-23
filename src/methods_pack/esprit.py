@@ -22,7 +22,7 @@ class ESPRIT(SubspaceMethod):
         upper = signal_subspace[:, :-1]
         lower = signal_subspace[:, 1:]
         phi = torch.linalg.lstsq(upper, lower)[0]  # identical to pinv(A) @ B but faster and stable.
-        eigvalues, _ = torch.linalg.eig(phi)
+        eigvalues = torch.linalg.eigvals(phi)
         eigvals_phase = torch.angle(eigvalues)
         prediction = -1 * torch.arcsin((1 / torch.pi) * eigvals_phase)
 
