@@ -30,8 +30,10 @@ class SparseCovADMMUnfold(ParentModel):
         self.P = (m[:, None] * m[None, :]).flatten()  # (|U|²,)
 
         # ---- Learned parameters ----
-        self.rho = nn.Parameter(torch.ones(self.num_iter,))
-        self.tau = nn.Parameter(torch.ones(self.num_iter,))
+        self.log_rho = nn.Parameter(torch.ones(self.num_iter, ))
+        self.log_tau = nn.Parameter(torch.ones(self.num_iter, ))
+        # self.log_rho = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
+        # self.log_tau = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
         self.mu_u = nn.Parameter(torch.ones(self.num_iter,))
         self.mu_v = nn.Parameter(torch.ones(self.num_iter,))
 
@@ -67,9 +69,11 @@ class SparseCovADMMUnfold(ParentModel):
 
         for k in range(self.num_iter):
             # R-update  (diagonal solve, batched)
-            rhs = vec_meas + self.rho[k] * (S - Udual + T - Vdual).reshape(B, -1)
+            rho_k = F.softplus(self.log_rho[k]).to(device)
+            tau_k = F.softplus(self.log_tau[k]).to(device)
+            rhs = vec_meas + 2 * rho_k * (S - Udual + T - Vdual).reshape(B, -1)
 
-            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2.0 * self.rho[k])
+            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * rho_k)
             inv_coeff = inv_coeff.expand(B, -1)
 
             vec_R = inv_coeff * rhs
@@ -77,7 +81,7 @@ class SparseCovADMMUnfold(ParentModel):
 
             # S-update  (SVT)
             Z = R + Udual
-            S = svt(Z, self.tau[k])
+            S = svt(Z, tau_k)
 
             # T-update  (Herm-Toeplitz-PSD)
             W = R + Vdual

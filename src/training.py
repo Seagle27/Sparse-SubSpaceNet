@@ -427,6 +427,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
     total_batches = len(training_params.train_dataset)
     total_iterations = training_params.epochs * total_batches  # Total number of batches across all epochs
+    torch.autograd.set_detect_anomaly(True)
 
     # Initialize tqdm once for the entire training process
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
@@ -453,17 +454,17 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 train_length += data[0].shape[0]
 
-                try:
-                    loss.backward()  # retain_graph=True
+                # try:
+                loss.backward()  # retain_graph=True
 
-                except RuntimeError as r:
-                    print(f"linalg error: \n{r}")
+                # except RuntimeError as r:
+                #     raise(f"linalg error: \n{r}")
 
-                else:
-                    # optimizer update
-                    optimizer.step()
-                    # reset gradients
-                    model.zero_grad()
+                # else:
+                # optimizer update
+                optimizer.step()
+                # reset gradients
+                model.zero_grad()
 
                 pbar.update(1)
 
