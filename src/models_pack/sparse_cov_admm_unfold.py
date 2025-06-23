@@ -34,9 +34,9 @@ class SparseCovADMMUnfold(ParentModel):
         self.P = (m[:, None] * m[None, :]).flatten()  # (|U|²,)
 
         # ---- Learned parameters ----
-        self.rho_m = nn.Parameter(torch.ones(self.num_iter, ))
-        self.rho_r = nn.Parameter(torch.ones(self.num_iter, ))
-        self.tau = nn.Parameter(torch.ones(self.num_iter, ))
+        self.rho_m = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
+        self.rho_r = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
+        self.tau = nn.Parameter(torch.ones(self.num_iter, self.U))
 
         self.mu_u = nn.Parameter(torch.ones(self.num_iter, ))
         self.mu_v = nn.Parameter(torch.ones(self.num_iter, ))

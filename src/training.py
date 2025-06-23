@@ -228,7 +228,7 @@ class TrainingParams(object):
             self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma)
         elif scheduler == "ReduceLROnPlateau":
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=gamma,
-                                                  patience=15)
+                                                  patience=10)
         else:
             raise ValueError(f"Scheduler {scheduler} is not defined.")
 

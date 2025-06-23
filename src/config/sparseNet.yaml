@@ -31,7 +31,7 @@ model:
 training:
   samples_size: 4096
   train_test_ratio: 0.1
-  epochs: 30
+  epochs: 10
   batch_size: 128
   optimizer: "Adam"
   learning_rate: 0.0001
@@ -50,7 +50,7 @@ evaluation:
   criterion: [rmspe, admm_objective]                # [rmspe, admm_objective]
   balance_factor: 1.0
   covariance_reconstruction: "admm"    # [averaging, admm, admm_cvxpy]
-  admm_iterations: [10]
+  admm_iterations: [5, 10]
 #  models:
 #    SparseNet:
 #      tau: 8
@@ -71,7 +71,7 @@ commands:
   train_model: true
   save_model: true
   evaluate_mode: true
-  plot_results: false
+  plot_results: true
   save_plots: false
 
 # Optional scenario sweep:
