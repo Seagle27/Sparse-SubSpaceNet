@@ -61,12 +61,13 @@ class TrainingParams:
 
 @dataclass
 class EvaluationParams:
-    criterion: str = "rmspe"
+    criterion: list = field(default_factory=lambda: ["rmspe"])
     balance_factor: float = 1.0
     covariance_reconstruction: str = 'sample'
     models: Optional[Dict[str, Dict[str, Any]]] = field(default_factory=dict)
     augmented_methods: Optional[list] = field(default_factory=list)
     subspace_methods: Optional[list] = field(default_factory=list)
+    admm_iterations: Optional[list] = field(default_factory=list)
 
 
 @dataclass

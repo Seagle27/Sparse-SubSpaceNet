@@ -35,6 +35,7 @@ import torch.linalg
 import torch.nn as nn
 from torch.utils.data.dataloader import DataLoader
 from pathlib import Path
+from typing import List
 
 # Internal imports
 from src.utils import *
@@ -102,7 +103,7 @@ def get_model(model_name: str, params: dict, system_model: SystemModel):
     return model.to(device)
 
 
-def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str="valid") -> dict:
+def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str="test") -> dict:
     """
     Evaluate the DNN model on a given dataset.
 
@@ -264,7 +265,7 @@ def evaluate_model_based(
         dataset (DataLoader): The evaluation dataset.
         system_model (SystemModel): The system model for the algorithms.
         criterion (nn.Module): The loss criterion for evaluation. Defaults to RMSPE.
-        algorithm (str): The algorithm to use (e.g., "music", "mvdr", "esprit", "r-music"). Defaults to "music".
+        algorithm (str): The algorithm to use (e.g., "music", "mvdr", "esprit", "r-music").
         cov_recon (CovReconstructor) : The method to use for the covariance matrix reconstruction
 
     Returns:
@@ -446,21 +447,22 @@ def evaluate_mle(dataset: list, system_model: SystemModel, criterion):
 
 def evaluate(
         generic_test_dataset: DataLoader,
-        criterion: nn.Module,
+        criterions: List[nn.Module],
         system_model: SystemModel,
         models: dict = None,
         augmented_methods: list = None,
         subspace_methods: list = None,
         model_tmp: nn.Module = None,
         cov_recon_method = 'sample',
-        cov_recon_params: dict = None):
+        cov_recon_params: dict = None,
+        admm_iterations: list = None):
     """
     TODO: Update docs
     Wrapper function for model and algorithm evaluations.
 
     Parameters:
         generic_test_dataset (list): Test dataset for generic subspace methods.
-        criterion (nn.Module): Loss criterion for (DNN) model evaluation.
+        criterions List[(nn.Module)]: Loss criterion for (DNN) model evaluation.
         system_model: instance of SystemModel.
         figures (dict): Dictionary to store figures.
         plot_spec (bool, optional): Whether to plot spectrums. Defaults to True.
@@ -473,58 +475,106 @@ def evaluate(
     Returns:
         None
     """
-    res = {}
-    # Evaluate DNN model if given
-    if model_tmp is not None:
-        model_test_loss = evaluate_dnn_model(model_tmp, generic_test_dataset)
-        try:
-            model_name = model_tmp._get_name()
-        except AttributeError:
-            model_name = "DNN"
-        res[model_name + "_tmp"] = model_test_loss
-    # Evaluate DNN models
-    for model_name, params in models.items():
-        model = get_model(model_name, params, system_model)
-        # num_of_params = sum(p.numel() for p in model.parameters())
-        # total_size = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
-        # print(f"Number of parameters in {model_name}: {num_of_params} with total size: {total_size} bytes")
-        start = time.time()
-        model_test_loss = evaluate_dnn_model(model_tmp, generic_test_dataset)
-        print(f"{model_name} evaluation time: {time.time() - start}")
-        res[model_name] = model_test_loss
+    # TODO: FIX and cleanup augmented methods
+    if cov_recon_method == 'admm':
+        results = admm_evaluation(generic_test_dataset, criterions, system_model, model_tmp, subspace_methods,
+                                  cov_recon_method, cov_recon_params, admm_iterations)
 
-    # Evaluate SubspaceNet augmented methods  #TODO: FIX and cleanup augmented methods
-    # for algorithm in augmented_methods:
-    #     loss = evaluate_augmented_model(
-    #         model=model,
-    #         dataset=generic_test_dataset,
-    #         system_model=system_model,
-    #         criterion=criterion,
-    #         algorithm=algorithm,
-    #         plot_spec=plot_spec,
-    #         figures=figures,
-    #     )
-    #     res["augmented" + algorithm] = loss
-
-    # Evaluate classical subspace methods
-    cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
-    if isinstance(criterion, ADMMObjective):
-        loss = evaluate_admm_convergence(generic_test_dataset, criterion, cov_recon)
-        res[cov_recon.__class__.__name__] = loss
     else:
-        for algorithm in subspace_methods:
-            start = time.time()
-            loss = evaluate_model_based(
-                generic_test_dataset,
-                system_model,
-                criterion=criterion,
-                algorithm=algorithm,
-                cov_recon=cov_recon)
-            if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
-                algorithm += "(SPS)"
-            print(f"{algorithm} evaluation time: {time.time() - start}")
-            res[algorithm] = loss
+        results = {}
+        for crit in criterions:
+            crit_name = crit.__class__.__name__
+            # initialize per-criterion dict
+            res = results.setdefault(crit_name, {})
 
-    for method, loss_ in res.items():
-        print(f"{method.upper() + ' test loss' : <30} = {loss_}")
-    return res
+            if model_tmp is not None:
+                model_test_loss = evaluate_dnn_model(model_tmp, generic_test_dataset)
+                model_name = model_tmp._get_name()
+                res[model_name] = model_test_loss
+            # Evaluate DNN models
+            # for model_name, params in models.items():
+            #     model = get_model(model_name, params, system_model)
+            #     # num_of_params = sum(p.numel() for p in model.parameters())
+            #     # total_size = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
+            #     # print(f"Number of parameters in {model_name}: {num_of_params} with total size: {total_size} bytes")
+            #     start = time.time()
+            #     model_test_loss = evaluate_dnn_model(model, generic_test_dataset)
+            #     print(f"{model_name} evaluation time: {time.time() - start}")
+            #     res[model_name] = model_test_loss
+
+
+            # Evaluate classical subspace methods
+            cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
+            if isinstance(crit, ADMMObjective):
+                loss = evaluate_admm_convergence(generic_test_dataset, crit, cov_recon)
+                res[cov_recon.__class__.__name__] = loss
+            else:
+                for algorithm in subspace_methods:
+                    start = time.time()
+                    loss = evaluate_model_based(
+                        generic_test_dataset,
+                        system_model,
+                        criterion=crit,
+                        algorithm=algorithm,
+                        cov_recon=cov_recon)
+                    if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
+                        algorithm += "(SPS)"
+                    print(f"{algorithm} evaluation time: {time.time() - start}")
+                    res[algorithm] = loss
+
+    for crit_name, method_dict in results.items():
+        print(f"\n=== Results for {crit_name} ===")
+        for method, loss in method_dict.items():
+            print(f"{method} = {loss}")
+
+    return results
+
+
+def admm_evaluation(generic_test_dataset: DataLoader,
+                    criterions: List[nn.Module],
+                    system_model: SystemModel,
+                    model: nn.Module = None,
+                    subspace_methods: list = None,
+                    cov_recon_method='admm',
+                    cov_recon_params: dict = None,
+                    admm_iterations: list = None):
+
+    results = {}
+
+    if admm_iterations is None:
+        admm_iterations = [model.num_iter]
+    for crit in criterions:
+        crit_name = crit.__class__.__name__
+        # initialize per-criterion dict
+        res = results.setdefault(crit_name, {})
+
+        if model is not None:
+            model.set_test_criteria(crit)
+
+        for num_iterations in admm_iterations:
+            if model is not None:
+                # Evaluate DNN model if given
+                model_test_loss = evaluate_dnn_model(model, generic_test_dataset, num_iterations)
+                model_name = model._get_name()
+                res[f"{model_name}_{num_iterations}"] = model_test_loss
+
+            # Evaluate classical methods:
+            cov_recon_params['max_iter'] = num_iterations
+            cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
+            if isinstance(crit, ADMMObjective):
+                loss = evaluate_admm_convergence(generic_test_dataset, crit, cov_recon)
+                res[f"{cov_recon.__class__.__name__}_{num_iterations}"] = loss
+            else:
+                for algorithm in subspace_methods:
+                    loss = evaluate_model_based(
+                        generic_test_dataset,
+                        system_model,
+                        criterion=crit,
+                        algorithm=algorithm,
+                        cov_recon=cov_recon)
+                    if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music",
+                                                                                                 "r-music", "esprit"]:
+                        algorithm += "(SPS)"
+                    res[f"{algorithm}_{num_iterations}"] = loss
+
+    return results

@@ -54,7 +54,7 @@ class SubspaceNet(ParentModel):
 
         """
         super(SubspaceNet, self).__init__(system_model, criterion)
-        self.criterion = set_criterions(criterion.lower())
+        self.criterion = set_criterions(criterion.lower())[0]
         self.tau = tau
         self.N = self.system_model.params.N
         self.diff_method = None

@@ -32,6 +32,8 @@ import numpy as np
 import torch.nn as nn
 import torch
 from itertools import permutations
+from typing import List
+
 from src.utils import *
 from scipy.optimize import linear_sum_assignment
 import time
@@ -391,12 +393,12 @@ class ADMMObjective(nn.Module):
         return loss.mean()                       # scalar
 
 
-def set_criterions(criterion_name: str, *args):
+def set_criterions(criterions_name: List[str], *args):
     """
     Set the loss criteria based on the criterion name.
 
     Parameters:
-        criterion_name (str): Name of the criterion.
+        criterions_name (List[str]): Names of the criterions.
 
     Returns:
         criterion (nn.Module): Loss criterion for model evaluation.
@@ -405,20 +407,30 @@ def set_criterions(criterion_name: str, *args):
     Raises:
         Exception: If the criterion name is not defined.
     """
-    if criterion_name.startswith("rmspe"):
-        criterion = RMSPELoss()
-    elif criterion_name.startswith("mse"):
-        criterion = nn.MSELoss()
-    elif criterion_name.startswith("rmse"):
-        criterion = RMSPELoss()
-    elif criterion_name.startswith("cartesian"):
-        criterion = CartesianLoss()
-    elif criterion_name == "admm_objective":
-        criterion = ADMMObjective(*args)
-    else:
-        raise Exception(f"criterions.set_criterions: Criterion {criterion_name} is not defined")
-    print(f"Loss measure = {criterion_name}")
-    return criterion
+    criterions = []
+    criterions_name = [criterions_name] if isinstance(criterions_name, str) else criterions_name
+
+    for name in criterions_name:
+        if name.startswith("rmspe"):
+            criterion = RMSPELoss()
+        elif name.startswith("mse"):
+            criterion = nn.MSELoss()
+        elif name.startswith("rmse"):
+            criterion = RMSPELoss()
+        elif name.startswith("cartesian"):
+            criterion = CartesianLoss()
+        elif name == "admm_objective":
+            criterion = ADMMObjective(*args)
+        else:
+            raise Exception(f"criterions.set_criterions: Criterion {name} is not defined")
+        print(f"Loss measure = {name}")
+
+        criterions.append(criterion)
+
+    if len(criterions) == 0:
+        raise ValueError("At least one criterion must be used")
+
+    return criterions
 
 
 class EigenRegularizationLoss:

@@ -74,7 +74,7 @@ class SimulationRunner:
             shuffle=False
         )
 
-        criterion = set_criterions(
+        criterions = set_criterions(
             config.evaluation.criterion,
             system_model.array,
             system_model.virtual_array,
@@ -84,14 +84,15 @@ class SimulationRunner:
 
         return evaluate(
             generic_test_dataset=test_loader,
-            criterion=criterion,
+            criterions=criterions,
             system_model=system_model,
             models=config.evaluation.models,
             augmented_methods=config.evaluation.augmented_methods,
             subspace_methods=config.evaluation.subspace_methods,
             model_tmp=model,
             cov_recon_method=config.evaluation.covariance_reconstruction,
-            cov_recon_params=asdict(config.admm_params)
+            cov_recon_params=asdict(config.admm_params),
+            admm_iterations=config.evaluation.admm_iterations
         )
 
     def _run_single_simulation(self):

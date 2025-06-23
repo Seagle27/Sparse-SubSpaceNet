@@ -34,11 +34,11 @@ training:
   epochs: 30
   batch_size: 128
   optimizer: "Adam"
-  learning_rate: 0.001
+  learning_rate: 0.0001
   weight_decay: 1e-9
   step_size: 40
   gamma: 0.5
-  scheduler: "StepLR"   # ReduceLROnPlateau
+  scheduler: "ReduceLROnPlateau"   # ReduceLROnPlateau
   training_objective: "angle"
   balance_factor: 1.0
   true_doa_train: null
@@ -47,9 +47,10 @@ training:
   true_range_test: null
 
 evaluation:
-  criterion: "rmspe"
+  criterion: [rmspe, admm_objective]                # [rmspe, admm_objective]
   balance_factor: 1.0
   covariance_reconstruction: "admm"    # [averaging, admm, admm_cvxpy]
+  admm_iterations: [10]
 #  models:
 #    SparseNet:
 #      tau: 8
@@ -70,7 +71,7 @@ commands:
   train_model: true
   save_model: true
   evaluate_mode: true
-  plot_results: true
+  plot_results: false
   save_plots: false
 
 # Optional scenario sweep:

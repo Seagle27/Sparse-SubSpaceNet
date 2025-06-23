@@ -21,7 +21,11 @@ class SparseCovADMMUnfold(ParentModel):
 
         self.phi = build_phi(self.system_model.array, self.system_model.virtual_array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
-        self.criterion = set_criterions(criterion, self.system_model.array, self.system_model.virtual_array)
+
+        self.criterion = set_criterions(criterion, self.system_model.array, self.system_model.virtual_array)[0]
+
+        self.test_criterion = self.criterion
+        self.test_iterations = self.num_iter
 
         self.U = self.phi.shape[1]  # |U|
 
@@ -30,14 +34,14 @@ class SparseCovADMMUnfold(ParentModel):
         self.P = (m[:, None] * m[None, :]).flatten()  # (|U|²,)
 
         # ---- Learned parameters ----
-        self.log_rho = nn.Parameter(torch.ones(self.num_iter, ))
-        self.log_tau = nn.Parameter(torch.ones(self.num_iter, ))
-        # self.log_rho = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
-        # self.log_tau = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
-        self.mu_u = nn.Parameter(torch.ones(self.num_iter,))
-        self.mu_v = nn.Parameter(torch.ones(self.num_iter,))
+        self.rho_m = nn.Parameter(torch.ones(self.num_iter, ))
+        self.rho_r = nn.Parameter(torch.ones(self.num_iter, ))
+        self.tau = nn.Parameter(torch.ones(self.num_iter, ))
 
-    def get_learned_covariance(self, x: torch.Tensor) -> torch.Tensor:
+        self.mu_u = nn.Parameter(torch.ones(self.num_iter, ))
+        self.mu_v = nn.Parameter(torch.ones(self.num_iter, ))
+
+    def get_learned_covariance(self, x: torch.Tensor, phase="train") -> torch.Tensor:
         Rx = sample_covariance(x)
         B, _, _ = Rx.shape
         U = self.U
@@ -67,13 +71,13 @@ class SparseCovADMMUnfold(ParentModel):
         # ADMM iterations
         # ------------------------------------------------------------
 
-        for k in range(self.num_iter):
-            # R-update  (diagonal solve, batched)
-            rho_k = F.softplus(self.log_rho[k]).to(device)
-            tau_k = F.softplus(self.log_tau[k]).to(device)
-            rhs = vec_meas + 2 * rho_k * (S - Udual + T - Vdual).reshape(B, -1)
+        num_iter = self.test_iterations if phase == "test" else self.num_iter
 
-            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * rho_k)
+        for k in range(num_iter):
+            # R-update  (diagonal solve, batched)
+            rhs = vec_meas + 2 * self.rho_r[k] * (S - Udual + T - Vdual).reshape(B, -1)
+
+            inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * self.rho_m[k])
             inv_coeff = inv_coeff.expand(B, -1)
 
             vec_R = inv_coeff * rhs
@@ -81,7 +85,7 @@ class SparseCovADMMUnfold(ParentModel):
 
             # S-update  (SVT)
             Z = R + Udual
-            S = svt(Z, tau_k)
+            S = svt(Z, self.tau[k])
 
             # T-update  (Herm-Toeplitz-PSD)
             W = R + Vdual
@@ -96,8 +100,8 @@ class SparseCovADMMUnfold(ParentModel):
 
         return T
 
-    def forward(self, x: torch.Tensor, num_sources: int):
-        R = self.get_learned_covariance(x)
+    def forward(self, x: torch.Tensor, num_sources: int, phase='train'):
+        R = self.get_learned_covariance(x, phase)
         doa_prediction, _, _ = self.subspace_method(R, num_sources)
         return doa_prediction
 
@@ -117,7 +121,15 @@ class SparseCovADMMUnfold(ParentModel):
         return self.training_step(batch)
 
     def test_step(self, batch):
-        return self.validation_step(batch)
+        x, sources_num, angles = self._prepare_batch(batch)
+        if isinstance(self.test_criterion, RMSPELoss):
+            doa_prediction = self(x, sources_num, phase='test')
+            loss = self.test_criterion(doa_prediction, angles)
+        else:
+            Rx = sample_covariance(x)
+            R = self.get_learned_covariance(x, phase='test')
+            loss = self.test_criterion(R, Rx)
+        return loss
 
     @staticmethod
     def get_model_based_method(method_name: str, system_model: SystemModel):
@@ -141,3 +153,12 @@ class SparseCovADMMUnfold(ParentModel):
         if method_name.lower().endswith("esprit"):
             return ESPRIT(system_model)
 
+    def set_test_criteria(self, test_criterion):
+        if isinstance(test_criterion, nn.Module):
+            self.test_criterion = test_criterion
+        else:
+            self.test_criterion = \
+                set_criterions(test_criterion, self.system_model.array, self.system_model.virtual_array)[0]
+
+    def set_num_test_iterations(self, num_iter: int) -> None:
+        self.test_iterations = num_iter

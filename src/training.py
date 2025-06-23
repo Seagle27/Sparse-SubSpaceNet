@@ -372,15 +372,15 @@ def train(
             range_valid_loss=loss_valid_list_ranges
         )
 
-        plt.figure(figsize=(10, 6))
-        plt.plot(range(1, len(reg_loss_train_list) + 1), reg_loss_train_list, label="eigen training Loss")
-        plt.xlabel("Epoch")
-        plt.ylabel("Loss")
-        plt.title("Eigen Regularization Loss")
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
+        # plt.figure(figsize=(10, 6))
+        # plt.plot(range(1, len(reg_loss_train_list) + 1), reg_loss_train_list, label="eigen training Loss")
+        # plt.xlabel("Epoch")
+        # plt.ylabel("Loss")
+        # plt.title("Eigen Regularization Loss")
+        # plt.grid(True)
+        # plt.legend()
+        # plt.tight_layout()
+        # plt.show()
 
         if save_figures:
             fig_loss.savefig(figures_saving_path / f"Loss_{model.get_model_name()}_{dt_string_for_save}.png")
@@ -427,7 +427,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
     total_batches = len(training_params.train_dataset)
     total_iterations = training_params.epochs * total_batches  # Total number of batches across all epochs
-    torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)
 
     # Initialize tqdm once for the entire training process
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
@@ -440,6 +440,10 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
             train_length = 0
 
             for data in training_params.train_dataset:
+                # reset gradients
+                optimizer.zero_grad()
+
+                # Forward pass
                 loss = model.training_step(data)
                 if isinstance(loss, tuple):
                     loss, acc, eigen_regularization = loss
@@ -456,15 +460,12 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 # try:
                 loss.backward()  # retain_graph=True
-
                 # except RuntimeError as r:
                 #     raise(f"linalg error: \n{r}")
 
                 # else:
                 # optimizer update
                 optimizer.step()
-                # reset gradients
-                model.zero_grad()
 
                 pbar.update(1)
 
