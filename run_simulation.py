@@ -80,8 +80,6 @@ class SimulationRunner:
             system_model.virtual_array,
         )
 
-        figures = initialize_figures()
-
         return evaluate(
             generic_test_dataset=test_loader,
             criterions=criterions,
@@ -195,7 +193,7 @@ class SimulationRunner:
                             loss = result
                         else:
                             for k in result.keys():
-                                loss[k]['Overall'] += result[k]['Overall']
+                                loss[k]['Overall'] += result[k]['loss']
                 for k in loss.keys():
                     loss[k]['Overall'] = loss[k]['Overall'] / successful_simulations
                 loss_dict[key][val] = loss

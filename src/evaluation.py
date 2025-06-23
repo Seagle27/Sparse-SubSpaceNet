@@ -47,7 +47,7 @@ from src.methods_pack.esprit import ESPRIT
 from src.methods_pack.mle import MLE
 from src.models import (ModelGenerator, SubspaceNet, DCDMUSIC, DeepAugmentedMUSIC,
                         DeepCNN, DeepRootMUSIC, TransMUSIC, SparseNet)
-from src.plotting import plot_spectrum
+from src.plotting import plot_spectrum, plot_admm_test_results
 from src.system_model import SystemModel
 from src.config.simulation_config import SystemModelParams
 from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
@@ -149,7 +149,7 @@ def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str="test") 
     overall_loss_angle /= test_length
     if overall_accuracy is not None:
         overall_accuracy /= test_length
-    overall_loss = {"Angle": overall_loss_angle,
+    overall_loss = {"loss": overall_loss_angle,
                     "Accuracy": overall_accuracy}
 
     return overall_loss
@@ -307,7 +307,7 @@ def evaluate_model_based(
 
         overall_loss /= test_length
         overall_acc /= test_length
-        overall_loss = {"Angle": overall_loss,
+        overall_loss = {"loss": overall_loss,
                         "Accuracy": overall_acc}
         return overall_loss
 
@@ -479,6 +479,7 @@ def evaluate(
     if cov_recon_method == 'admm':
         results = admm_evaluation(generic_test_dataset, criterions, system_model, model_tmp, subspace_methods,
                                   cov_recon_method, cov_recon_params, admm_iterations)
+        plot_admm_test_results(results)
 
     else:
         results = {}
@@ -554,7 +555,8 @@ def admm_evaluation(generic_test_dataset: DataLoader,
         for num_iterations in admm_iterations:
             if model is not None:
                 # Evaluate DNN model if given
-                model_test_loss = evaluate_dnn_model(model, generic_test_dataset, num_iterations)
+                model.set_num_test_iterations(num_iterations)
+                model_test_loss = evaluate_dnn_model(model, generic_test_dataset).get('loss')
                 model_name = model._get_name()
                 res[f"{model_name}_{num_iterations}"] = model_test_loss
 
@@ -571,7 +573,7 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                         system_model,
                         criterion=crit,
                         algorithm=algorithm,
-                        cov_recon=cov_recon)
+                        cov_recon=cov_recon).get('loss')
                     if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music",
                                                                                                  "r-music", "esprit"]:
                         algorithm += "(SPS)"

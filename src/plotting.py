@@ -36,6 +36,8 @@ from pathlib import Path
 from matplotlib import pyplot as plt
 import numpy as np
 import torch
+from typing import Dict
+
 from src.methods import MUSIC, RootMUSIC, MVDR
 from src.utils import R2D
 from src.utils import plot_styles, parse_loss_results_for_plotting
@@ -351,3 +353,54 @@ def plot_acc_results(test, test_values, plt_res, simulations_path, save_to_file=
     if save_to_file:
         fig.savefig(simulations_path + "_acc.pdf", transparent=True, bbox_inches='tight')
     fig.show()
+
+
+def plot_admm_test_results(results: Dict[str, Dict[str, float]]):
+    """
+    Plot loss vs. number of iterations for each method/DNN line,
+    with a separate plot for each criterion.
+
+    Parameters:
+        results: {
+            'RMSPELoss': {
+                'ModelA_1': 0.123,
+                'ADMM_1'  : 0.456,
+                'Music_1' : 0.789,
+                'ModelA_5': 0.111,
+                'ADMM_5'  : 0.222,
+                'Music_5' : 0.333,
+                ...
+            },
+            'CustomLoss': { ... },
+        }
+    """
+    for crit_name, method_dict in results.items():
+        # Aggregate loss values per method
+        method_data = {}
+        for key, loss in method_dict.items():
+            if '_' not in key:
+                continue
+            method_name, iter_str = key.rsplit('_', 1)
+            try:
+                iterations = int(iter_str)
+            except ValueError:
+                # skip keys that don't follow the expected naming
+                continue
+            method_data.setdefault(method_name, []).append((iterations, loss))
+
+        # Create a new figure for each criterion
+        plt.figure()
+        for method_name, points in method_data.items():
+            # Sort by iteration count
+            points_sorted = sorted(points, key=lambda x: x[0])
+            xs = [pt[0] for pt in points_sorted]
+            ys = [pt[1] for pt in points_sorted]
+            plt.plot(xs, ys, label=method_name)
+
+        plt.xlabel('Number of ADMM Iterations')
+        plt.ylabel('Loss')
+        plt.title(f'Loss vs Iterations ({crit_name})')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()

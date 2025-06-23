@@ -479,7 +479,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
             # Calculate evaluation loss
             valid_loss = evaluate_dnn_model(model, training_params.valid_dataset, mode="valid")
-            loss_valid_list.append(valid_loss.get("Angle"))
+            loss_valid_list.append(valid_loss.get("loss"))
 
             # Update scheduler
             if isinstance(training_params.scheduler, lr_scheduler.ReduceLROnPlateau):
@@ -489,7 +489,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
             # Report results
             result_txt = (f"[Epoch : {epoch + 1}/{training_params.epochs}]"
-                          f" Train loss = {epoch_train_loss:.6f}, Validation loss = {valid_loss.get('Angle'):.6f}")
+                          f" Train loss = {epoch_train_loss:.6f}, Validation loss = {valid_loss.get('loss'):.6f}")
 
             acc_train_list.append(epoch_train_acc * 100)
             acc_valid_list.append(valid_loss.get('Accuracy') * 100)
@@ -499,11 +499,11 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
             print(result_txt)
             # Save best model weights
-            if min_valid_loss > valid_loss.get("Angle"):
+            if min_valid_loss > valid_loss.get("loss"):
                 print(
-                    f"Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss.get('Angle'):.6f}) \t Saving The Model"
+                    f"Validation Loss Decreased({min_valid_loss:.6f}--->{valid_loss.get('loss'):.6f}) \t Saving The Model"
                 )
-                min_valid_loss = valid_loss.get("Angle")
+                min_valid_loss = valid_loss.get("loss")
                 best_epoch = epoch
                 # Saving State Dict
                 best_model_wts = copy.deepcopy(model.state_dict())
