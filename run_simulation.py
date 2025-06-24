@@ -11,7 +11,6 @@ from src.signal_creation import Samples
 from src.training import TrainingParams, train
 from src.evaluation import evaluate
 from src.data_handler import create_dataset, load_datasets, SameLengthBatchSampler, collate_fn
-from src.plotting import initialize_figures, plot_results
 from src.training import set_criterions
 from src.utils import print_loss_results_from_simulation
 from src.steering_vector_generator import SteeringVectorGenerator

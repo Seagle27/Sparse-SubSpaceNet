@@ -395,11 +395,15 @@ def plot_admm_test_results(results: Dict[str, Dict[str, float]]):
             points_sorted = sorted(points, key=lambda x: x[0])
             xs = [pt[0] for pt in points_sorted]
             ys = [pt[1] for pt in points_sorted]
+
+            if crit_name == 'ADMMObjective':
+                ys = np.log(ys)
             plt.plot(xs, ys, label=method_name)
 
         plt.xlabel('Number of ADMM Iterations')
-        plt.ylabel('Loss')
-        plt.title(f'Loss vs Iterations ({crit_name})')
+        ylabel = 'Log(Loss)' if crit_name == 'ADMMObjective' else 'Loss'
+        plt.ylabel(ylabel)
+        plt.title(f'{crit_name} vs Iterations')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()

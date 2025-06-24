@@ -158,7 +158,7 @@ class ADMMReconstructor(CovReconstructor):
         # ------------------------------------------------------------
         # diagonal coefficients  (mask + 2ρI)⁻¹  (1-D then broadcast)
         # ------------------------------------------------------------
-        inv_coeff = 1.0 / (self.P.to(dev, dtype) + self.rho)
+        inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * self.rho)
         inv_coeff = inv_coeff.expand(B, -1)  # (B, |U|²)
 
         # ------------------------------------------------------------

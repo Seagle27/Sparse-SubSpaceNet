@@ -75,7 +75,7 @@ class SparseCovADMMUnfold(ParentModel):
 
         for k in range(num_iter):
             # R-update  (diagonal solve, batched)
-            rhs = vec_meas + 2 * self.rho_r[k] * (S - Udual + T - Vdual).reshape(B, -1)
+            rhs = vec_meas + self.rho_r[k] * (S - Udual + T - Vdual).reshape(B, -1)
 
             inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * self.rho_m[k])
             inv_coeff = inv_coeff.expand(B, -1)
@@ -117,9 +117,11 @@ class SparseCovADMMUnfold(ParentModel):
 
         return loss
 
+    @torch.no_grad()
     def validation_step(self, batch):
         return self.training_step(batch)
 
+    @torch.no_grad()
     def test_step(self, batch):
         x, sources_num, angles = self._prepare_batch(batch)
         if isinstance(self.test_criterion, RMSPELoss):

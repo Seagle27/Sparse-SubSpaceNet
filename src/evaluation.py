@@ -330,7 +330,8 @@ def evaluate_admm_convergence(dataset: DataLoader,
 
             cov = cov_recon(x)
             Rx = sample_covariance(x)
-            overall_loss += criterion(cov, Rx)
+            loss = criterion(cov, Rx)
+            overall_loss += loss.item()
             if data[0].dim() == 2:
                 test_length += 1
             else:
@@ -541,19 +542,21 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                     admm_iterations: list = None):
 
     results = {}
-
+    max_learned_admm_iterations = model.num_iter
     if admm_iterations is None:
         admm_iterations = [model.num_iter]
     for crit in criterions:
         crit_name = crit.__class__.__name__
         # initialize per-criterion dict
         res = results.setdefault(crit_name, {})
+        print(f"\n=== Evaluating criterion {crit_name} ===")
 
         if model is not None:
             model.set_test_criteria(crit)
 
         for num_iterations in admm_iterations:
-            if model is not None:
+            print(f"\n=== Evaluating {num_iterations} Iterations ===")
+            if model is not None and num_iterations <= max_learned_admm_iterations:
                 # Evaluate DNN model if given
                 model.set_num_test_iterations(num_iterations)
                 model_test_loss = evaluate_dnn_model(model, generic_test_dataset).get('loss')
