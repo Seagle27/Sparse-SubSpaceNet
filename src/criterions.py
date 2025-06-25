@@ -390,7 +390,7 @@ class ADMMObjective(nn.Module):
         nuc = s.sum(dim=1)                       # (B,)
 
         loss = data_fit + self.mu * nuc
-        return loss.mean()                       # scalar
+        return loss.sum()                       # scalar
 
 
 def set_criterions(criterions_name: List[str], *args):
