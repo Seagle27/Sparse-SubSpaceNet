@@ -1,7 +1,3 @@
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
 from src.methods_pack.cov_reconstruct import sample_covariance
 from src.models_pack.parent_model import ParentModel
 from src.system_model import SystemModel
@@ -19,10 +15,10 @@ class SparseCovADMMUnfold(ParentModel):
         self.num_iter = num_iterations
         self.subspace_method = self.get_model_based_method(subspace_method, system_model)
 
-        self.phi = build_phi(self.system_model.array, self.system_model.virtual_array)  # (|S|,|U|)
+        self.phi = build_phi(self.system_model.array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
 
-        self.criterion = set_criterions(criterion, self.system_model.array, self.system_model.virtual_array)[0]
+        self.criterion = set_criterions(criterion, self.system_model.array)[0]
 
         self.test_criterion = self.criterion
         self.test_iterations = self.num_iter
@@ -158,7 +154,7 @@ class SparseCovADMMUnfold(ParentModel):
             self.test_criterion = test_criterion
         else:
             self.test_criterion = \
-                set_criterions(test_criterion, self.system_model.array, self.system_model.virtual_array)[0]
+                set_criterions(test_criterion, self.system_model.array)[0]
 
     def set_num_test_iterations(self, num_iter: int) -> None:
         self.test_iterations = num_iter

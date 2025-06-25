@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Union, Optional, Dict, Any
 from omegaconf import OmegaConf
+import re
 
 
 @dataclass
@@ -17,13 +18,13 @@ class SimulationCommands:
 
 @dataclass
 class SystemModelParams:
-    N: int  # Number of Antennas
     M: Any  # Number of targets
     T: int  # Snapshots
     snr: Any  # in dB
     field_type: str  # ['Far', 'Near']
     signal_nature: str  # ['coherent', 'non-coherent']
     array_form: str  # ['ula', 'mra-4', 'mra-5', 'mra-6', 'mra-7', 'mra-8']
+    N: Optional[int] = None  # Number of Antennas
     signal_type: str = "NarrowBand"
     eta: float = 0.0
     bias: float = 0.0
@@ -37,6 +38,28 @@ class SystemModelParams:
         self.M = normalize_range_param(self.M)
         self.snr = normalize_range_param(self.snr)
         self.doa_range = tuple(self.doa_range)
+
+        # if N wasn't specified in YAML, infer from array_form
+        if self.N is None:
+            # Match MRA: 'mra-7' → N = 7
+            m_mra = re.match(r"^mra-(\d+)$", self.array_form)
+            if m_mra:
+                self.N = int(m_mra.group(1))
+
+            else:
+                # Match coprime: 'coprime_M_N' → N = M + N - 1
+                m_coprime = re.match(r"^coprime_(\d+)_(\d+)$", self.array_form)
+                if m_coprime:
+                    p = int(m_coprime.group(1))
+                    q = int(m_coprime.group(2))
+                    self.N = p + q - 1
+
+                else:
+                    # No inference rule applies
+                    raise ValueError(
+                        f"Cannot infer N from array_form='{self.array_form}'. "
+                        "Please specify 'N' explicitly in your config."
+                    )
 
 
 @dataclass

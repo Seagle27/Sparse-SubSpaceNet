@@ -77,7 +77,6 @@ class SimulationRunner:
         criterions = set_criterions(
             config.evaluation.criterion,
             system_model.array,
-            system_model.virtual_array,
         )
 
         return evaluate(

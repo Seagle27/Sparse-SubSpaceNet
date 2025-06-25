@@ -18,17 +18,17 @@ def get_array_locations(array_form: str):
             raise Exception(f"{array_type} isn't supported")
     if array_type.startswith("coprime"):
         try:
-            _, n_str, m_str = array_type.split('_')
-            return coprime_array(int(n_str), int(m_str))
+            _, m_str, n_str = array_type.split('_')
+            return coprime_array(int(m_str), int(n_str))
         except (ValueError, AttributeError):
             raise ValueError(
-                f'"{array_type}" is not in the expected "coprime_<N>_<M>" format.'
+                f'"{array_type}" is not in the expected "coprime_<M>_<N>" format.'
             )
     else:
         raise Exception(f"{array_type} isn't supported")
 
 
-def get_virtual_array(array_loc):
+def get_difference_co_array(array_loc):
     array_locations = np.array(array_loc, dtype=float)  # Ensure numpy array
     coarray = array_locations[:, None] - array_locations[None, :]  # Difference coarray
     unique_lags = np.sort(np.unique(coarray))
@@ -36,7 +36,7 @@ def get_virtual_array(array_loc):
 
 
 def get_virtual_ula_array(array_loc):
-    unique_lags = get_virtual_array(array_loc)
+    unique_lags = get_difference_co_array(array_loc)
     largest_ula_element = 0
 
     for i in range(1, len(unique_lags) + 1):
@@ -47,28 +47,28 @@ def get_virtual_ula_array(array_loc):
     return np.arange(0, largest_ula_element + 1, 1)
 
 
-def coprime_array(N: int, M: int) -> np.ndarray:
+def coprime_array(M: int, N: int) -> np.ndarray:
     r"""
     Generate the sensor locations (in half‐wavelength units) of a *coprime sparse array*
     formed by interleaving two uniform linear sub‑arrays:
 
     * Sub‑arrayA: `N` sensors with spacing `M·d`
       → positions{0,M,2M,…,(N−1)M\}.
-    * Sub‑arrayB: `2M−1` sensors with spacing `N·d`
-      → positions{N,2N,…,(2M−1)N}.
+    * Sub‑arrayB: `M−1` sensors with spacing `N·d`
+      → positions{N,2N,…,(M−1)N}.
 
     The two integers `N` and `M` **must be coprime**.
 
     Parameters
     ----------
-    N, M : int
-        Coprime integers (e.g.N=4,M=3).
+    M, N : int
+        Coprime integers (e.g.M=3,N=4).
 
     Returns
     -------
     np.ndarray
         Sorted 1‑D array of unique sensor indices (integer multiples of
-        :math:`d = \lambda / 2`).  Length is `N + 2M − 1`.
+        :math:`d = \lambda / 2`).  Length is `N + M − 1`.
 
     Notes
     -----
@@ -83,13 +83,12 @@ def coprime_array(N: int, M: int) -> np.ndarray:
     # sub‑array A positions: 0, M, 2M, …, (N‑1)M
     a_positions = np.arange(N) * M
 
-    # sub‑array B positions: N, 2N, …, (2M‑1)N
-    b_positions = np.arange(1, 2 * M) * N
+    # sub‑array B positions: N, 2N, …, (M‑1)N
+    b_positions = np.arange(1, M) * N
 
     # merge, drop duplicates (none by design), sort
     pos = np.concatenate((a_positions, b_positions))
-    indexes = np.unique(pos, return_index=True)[1]
-    positions = np.array([pos[index] for index in sorted(indexes)])
+    positions = np.unique(pos)
 
     return positions
 

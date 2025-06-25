@@ -110,7 +110,7 @@ class SubspaceMethod(nn.Module):
         moe = self.model_order_estimation.lower()
         M = number_of_sources
         if self.system_model.is_sparse_array:
-            N_eff = self.system_model.virtual_array.shape[0]
+            N_eff = self.system_model.virtual_array_ula_seg.shape[0]
         else:
             N_eff = self.system_model.params.N
 
@@ -149,7 +149,7 @@ class SubspaceMethod(nn.Module):
         T = self.system_model.params.T
 
         if self.system_model.is_sparse_array:
-            N = self.system_model.virtual_array.shape[0]
+            N = self.system_model.virtual_array_ula_seg.shape[0]
         else:
             N = self.system_model.params.N
 

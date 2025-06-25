@@ -24,7 +24,7 @@ class SparseNet(SubspaceNet):
         """
         super().__init__(**kwargs)
         if self.system_model.is_sparse_array:
-            self.L = len(self.system_model.virtual_array)
+            self.L = len(self.system_model.virtual_array_ula_seg)
         else:
             self.L = len(self.system_model.array)
 
@@ -49,7 +49,7 @@ class SparseNet(SubspaceNet):
             x2 = torch.conj(center_x[:, :, i:]).transpose(1, 2).to(torch.complex128)
             Rx_lag = torch.einsum("BNT, BTM -> BNM", x1, x2) / (center_x.shape[-1] - i - 1)
             x_s_diff = torch.zeros(batch_size, 2 * self.L - 1, dtype=torch.complex128, device=device)
-            for j, lag in enumerate(range(-np.max(self.system_model.virtual_array), np.max(self.system_model.virtual_array) + 1)):
+            for j, lag in enumerate(range(-np.max(self.system_model.virtual_array_ula_seg), np.max(self.system_model.virtual_array_ula_seg) + 1)):
                 pairs = torch.from_numpy(self.differences_array) == lag
                 if pairs.any():
                     x_s_diff[:, j] = torch.mean(Rx_lag[:, pairs], dim=1)

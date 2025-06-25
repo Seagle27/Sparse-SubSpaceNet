@@ -13,12 +13,11 @@ This script defines the SystemModel class for defining the settings of the DoA e
 
 # Imports
 import numpy as np
-import torch
 
 from typing import Optional
 
 from src.steering_vector_generator import SteeringVectorGenerator
-from src.sparse_array import get_array_locations, get_virtual_ula_array
+from src.sparse_array import get_array_locations, get_virtual_ula_array, get_difference_co_array
 from src.config.simulation_config import SystemModelParams
 
 
@@ -50,7 +49,7 @@ class SystemModel(object):
 
         """
         self.array = None
-        self.virtual_array = None
+        self.virtual_array_ula_seg = None
 
         self.dist_array_elems = None
         self.time_axis = None
@@ -117,7 +116,7 @@ class SystemModel(object):
             self.array = np.linspace(0, self.params.N, self.params.N, endpoint=False)
         elif self.is_sparse_array:
             self.array = get_array_locations(array_form)
-            self.virtual_array = get_virtual_ula_array(self.array)
+            self.virtual_array_ula_seg = get_virtual_ula_array(self.array)
         else:
             raise ValueError(f"{array_form} isn't supported")
 

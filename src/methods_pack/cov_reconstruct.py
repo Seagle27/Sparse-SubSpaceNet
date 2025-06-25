@@ -82,8 +82,8 @@ class AveragingReconstructor(CovReconstructor):
     Rx (torch.Tensor): virtual array's covariance matrix
     """
     def __init__(self, sys_model: SystemModel):
-        self.L = len(sys_model.virtual_array)
-        self.virtual_array = sys_model.virtual_array
+        self.L = len(sys_model.virtual_array_ula_seg)
+        self.virtual_array = sys_model.virtual_array_ula_seg
         self.diff_array = sys_model.array[:, None] - sys_model.array[None, :]
 
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
@@ -120,7 +120,7 @@ class ADMMReconstructor(CovReconstructor):
                      tol_dual: float = 1e-11,
                      verbose: bool = False):
         self.sys = sys_model
-        self.phi = build_phi(self.sys.array, self.sys.virtual_array)  # (|S|,|U|)
+        self.phi = build_phi(self.sys.array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
         self.U = self.phi.shape[1]  # |U|
 
@@ -158,7 +158,7 @@ class ADMMReconstructor(CovReconstructor):
         # ------------------------------------------------------------
         # diagonal coefficients  (mask + 2ρI)⁻¹  (1-D then broadcast)
         # ------------------------------------------------------------
-        inv_coeff = 1.0 / (self.P.to(dev, dtype) + self.rho)
+        inv_coeff = 1.0 / (self.P.to(dev, dtype) + 2 * self.rho)
         inv_coeff = inv_coeff.expand(B, -1)  # (B, |U|²)
 
         # ------------------------------------------------------------
@@ -229,7 +229,7 @@ class ADMMReconstructorCVXPY(CovReconstructor):
     """
     def __init__(self, sys_model: SystemModel, mu: float = 2.5e-3, **unused_kwargs):
         self.sys = sys_model
-        self.phi = build_phi(self.sys.array, self.sys.virtual_array)  # (|S|,|U|)
+        self.phi = build_phi(self.sys.array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
         self.U = self.phi.shape[1]  # |U|
         self.S = self.phi.shape[0]  # |S|
@@ -245,7 +245,7 @@ class ADMMReconstructorCVXPY(CovReconstructor):
         mu : float
             nuclear-norm weight μ in (17)
         solver : str
-            CVXPY solver name (“SCS”, “MOSEK”, …)
+            CVXPY solver name (“SCS”, “MOSEK”, "CVXOPT", ...)
 
         Returns
         -------

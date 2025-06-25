@@ -362,10 +362,10 @@ class ADMMObjective(nn.Module):
         Weight on the nuclear-norm term.
     """
 
-    def __init__(self, array, virtual_array, mu: float = 2.5e-3) -> None:
+    def __init__(self, array, mu: float = 2.5e-3) -> None:
         super().__init__()
         self.mu = mu
-        self.phi = build_phi(array, virtual_array)
+        self.phi = build_phi(array)
         self.phi_H = self.phi.t()
 
 
