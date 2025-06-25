@@ -287,7 +287,7 @@ class TrainingParams(object):
 
         # init sampler
         batch_sampler_train = SameLengthBatchSampler(train_dataset, batch_size=self.batch_size)
-        batch_sampler_valid = SameLengthBatchSampler(valid_dataset, batch_size=32, shuffle=False)
+        batch_sampler_valid = SameLengthBatchSampler(valid_dataset, batch_size=128, shuffle=False)
         # Transform datasets into DataLoader objects
         self.train_dataset = torch.utils.data.DataLoader(
             train_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_train

@@ -542,7 +542,7 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                     admm_iterations: list = None):
 
     results = {}
-    max_learned_admm_iterations = model.num_iter
+    max_learned_admm_iterations = model.num_iter if model is not None else 0
     if admm_iterations is None:
         admm_iterations = [model.num_iter]
     for crit in criterions:

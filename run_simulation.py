@@ -69,7 +69,7 @@ class SimulationRunner:
         test_loader = torch.utils.data.DataLoader(
             test_dataset,
             collate_fn=collate_fn,
-            batch_sampler=SameLengthBatchSampler(test_dataset, batch_size=1),
+            batch_sampler=SameLengthBatchSampler(test_dataset, batch_size=128),
             shuffle=False
         )
 
