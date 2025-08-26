@@ -367,7 +367,7 @@ def print_loss_results_from_simulation(loss_results: dict):
     for test, value_dict in loss_results.items():
         print("#" * 10 + f"{test} TEST RESULTS" + "#" * 10)
         for test_value, results in value_dict.items():
-            if test == "SNR":
+            if test.lower() == "snr":
                 print(f"{test} = {test_value} [dB]: ")
             else:
                 print(f"{test} = {test_value}: ")

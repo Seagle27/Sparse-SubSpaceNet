@@ -423,7 +423,6 @@ def set_criterions(criterions_name: List[str], *args):
             criterion = ADMMObjective(*args)
         else:
             raise Exception(f"criterions.set_criterions: Criterion {name} is not defined")
-        print(f"Loss measure = {name}")
 
         criterions.append(criterion)
 

@@ -191,9 +191,11 @@ class SimulationRunner:
                             loss = result
                         else:
                             for k in result.keys():
-                                loss[k]['Overall'] += result[k]['loss']
-                for k in loss.keys():
-                    loss[k]['Overall'] = loss[k]['Overall'] / successful_simulations
+                                for test in result[k]:
+                                    loss[k][test] += result[k][test]
+                for k in loss.keys():  # Iterate over loss functions
+                    for test in loss[k].keys():
+                        loss[k][test] = loss[k][test] / successful_simulations
                 loss_dict[key][val] = loss
                 print(loss_dict)
 
