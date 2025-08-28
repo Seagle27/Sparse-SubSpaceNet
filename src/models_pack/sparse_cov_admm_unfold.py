@@ -109,7 +109,8 @@ class SparseCovADMMUnfold(ParentModel):
         else:
             Rx = sample_covariance(x)
             R = self.get_learned_covariance(x)
-            loss = self.criterion(R, Rx)
+            mu = torch.mean(self.tau[-1]) * torch.mean(self.rho_m[-1])
+            loss = self.criterion(R, Rx, mu)
 
         return loss
 
@@ -126,7 +127,8 @@ class SparseCovADMMUnfold(ParentModel):
         else:
             Rx = sample_covariance(x)
             R = self.get_learned_covariance(x, phase='test')
-            loss = self.test_criterion(R, Rx)
+            mu = torch.mean(self.tau[-1]) * torch.mean(self.rho_r[-1]).item()
+            loss = self.test_criterion(R, Rx, mu)
         return loss
 
     @staticmethod

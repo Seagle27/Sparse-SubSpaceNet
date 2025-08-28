@@ -371,8 +371,8 @@ class ADMMObjective(nn.Module):
 
     def forward(self,
                 R_hat: Tensor,    # (B, |U|, |U|)
-                Rx:     Tensor    # (B, |S|, |S|)
-                ) -> Tensor:
+                Rx:     Tensor,    # (B, |S|, |S|)
+                mu=None) -> Tensor:
         """
         Returns a *scalar* loss (mean over batch).
 
@@ -389,7 +389,8 @@ class ADMMObjective(nn.Module):
         _, s, _ = torch.linalg.svd(R_hat, full_matrices=False)
         nuc = s.sum(dim=1)                       # (B,)
 
-        loss = data_fit + self.mu * nuc
+        mu = self.mu if mu is None else mu
+        loss = data_fit + mu * nuc
         return loss.sum()                       # scalar
 
 
@@ -433,7 +434,7 @@ def set_criterions(criterions_name: List[str], *args):
 
 
 class EigenRegularizationLoss:
-    EIGEN_REGULARIZATION_WEIGHT = 1e-1
+    EIGEN_REGULARIZATION_WEIGHT = 0
 
     def __init__(self, init_value=EIGEN_REGULARIZATION_WEIGHT):
         self._eigenregularization_weight = init_value
