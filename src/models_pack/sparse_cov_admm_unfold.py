@@ -89,9 +89,6 @@ class SparseCovADMMUnfold(ParentModel):
             Udual += self.mu_u[k] * (R - S)
             Vdual += self.mu_v[k] * (R - T)
 
-            S_prev.copy_(S)
-            T_prev.copy_(T)
-
         return T
 
     def forward(self, x: torch.Tensor, num_sources: int, phase='train'):
