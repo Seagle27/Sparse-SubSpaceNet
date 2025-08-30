@@ -103,10 +103,6 @@ class ModelConfig:
 class ADMMCovarianceReconstructionParams:
     mu: float = 2.5e-3
     rho: float = 2
-    max_iter: int = 500
-    tol_primal: float = 1e-7
-    tol_dual: float = 1e-7
-    verbose: bool = False
 
 
 @dataclass
@@ -124,6 +120,7 @@ def load_simulation_config(path: str) -> SimulationConfig:
     base = OmegaConf.structured(SimulationConfig)
     yaml_cfg = OmegaConf.load(path)
     cfg = OmegaConf.merge(base, yaml_cfg)
+    OmegaConf.resolve(cfg)
     return OmegaConf.to_object(cfg)  # Convert to regular nested dataclasses
 
 

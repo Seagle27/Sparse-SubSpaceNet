@@ -13,28 +13,30 @@ system_model:
   doa_range: [-70, 70]
   min_gap: 5
 
-#model:
-#  model_type: "SparseNet"
-#  model_params:
-#    tau: 8
-#    diff_method: "esprit"
-#    criterion: "rmspe"
+
+admm_params:
+  mu: 2.5e-3
+  rho:  2
+
 
 model:
   model_type: "LearnedADMM"
   model_params:
-    num_iterations: 10
+    num_iterations: 20
     subspace_method: "esprit"
-    criterion: "rmspe"
+    criterion: "rmspe"    # admm_objective, rmspe
+    mu: ${admm_params.mu}   # pulled from top-level admm_params
+    rho: ${admm_params.rho}  # pulled from top-level admm_params
 
 
 training:
-  samples_size: 4096
-  train_test_ratio: 0.1
-  epochs: 10
-  batch_size: 128
+  samples_size: 8000
+  train_test_ratio: 0.25
+  epochs: 80
+  batch_size: 256
   optimizer: "Adam"
-  learning_rate: 0.0001
+  learning_rate: 5e-4
+#  learning_rate: 0.001
   weight_decay: 1e-9
   step_size: 40
   gamma: 0.5
@@ -47,23 +49,16 @@ training:
   true_range_test: null
 
 evaluation:
-  criterion: [rmspe, admm_objective]                # [rmspe, admm_objective]
+  criterion: [rmspe]                # [rmspe, admm_objective]
   balance_factor: 1.0
   covariance_reconstruction: "admm"    # [averaging, admm, admm_cvxpy]
-  admm_iterations: [5, 10]
+  admm_iterations: [20, 200, 500, 1000, 1500]
 #  models:
 #    SparseNet:
 #      tau: 8
 #      diff_method: "esprit"
   augmented_methods: []
   subspace_methods: ["esprit"]
-
-admm_params:
-  mu: 2.5e-3
-  rho:  2
-  max_iter: 10
-  tol_primal: 1e-7
-  tol_dual: 1e-7
 
 commands:
   create_data: true

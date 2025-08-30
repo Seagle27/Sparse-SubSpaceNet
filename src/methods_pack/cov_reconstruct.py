@@ -116,8 +116,8 @@ class ADMMReconstructor(CovReconstructor):
     'Structured Nyquist Correlation Reconstruction for DOA Estimation With Sparse Arrays, 2023'
     """
     def __init__(self, sys_model: SystemModel, mu: float = 2.5e-3,
-                     rho: float = 2, max_iter=400, tol_primal: float = 1e-11,
-                     tol_dual: float = 1e-11,
+                     rho: float = 2, max_iter=400, tol_primal: float = 1e-7,
+                     tol_dual: float = 1e-7,
                      verbose: bool = False):
         self.sys = sys_model
         self.phi = build_phi(self.sys.array)  # (|S|,|U|)

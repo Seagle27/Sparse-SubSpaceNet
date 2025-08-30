@@ -9,7 +9,7 @@ from src.criterions import set_criterions, RMSPELoss, ADMMObjective
 
 
 class SparseCovADMMUnfold(ParentModel):
-    def __init__(self, system_model: SystemModel, criterion, num_iterations: int, subspace_method: str):
+    def __init__(self, system_model: SystemModel, criterion, num_iterations: int, subspace_method: str, mu=1, rho=1):
         super().__init__(system_model, criterion)
 
         self.num_iter = num_iterations
@@ -30,9 +30,9 @@ class SparseCovADMMUnfold(ParentModel):
         self.P = (m[:, None] * m[None, :]).flatten()  # (|U|²,)
 
         # ---- Learned parameters ----
-        self.rho_m = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
-        self.rho_r = nn.Parameter(torch.ones(self.num_iter, self.P.numel()))
-        self.tau = nn.Parameter(torch.ones(self.num_iter, self.U))
+        self.rho_m = nn.Parameter(rho * torch.ones(self.num_iter, self.P.numel()))
+        self.rho_r = nn.Parameter(rho * torch.ones(self.num_iter, self.P.numel()))
+        self.tau = nn.Parameter((mu/rho) * torch.ones(self.num_iter, self.U))
 
         self.mu_u = nn.Parameter(torch.ones(self.num_iter, ))
         self.mu_v = nn.Parameter(torch.ones(self.num_iter, ))
@@ -60,8 +60,6 @@ class SparseCovADMMUnfold(ParentModel):
         T = toeplitz_proj(R)
         Udual = torch.zeros_like(R)
         Vdual = torch.zeros_like(R)
-
-        S_prev, T_prev = S.clone(), T.clone()
 
         # ------------------------------------------------------------
         # ADMM iterations
