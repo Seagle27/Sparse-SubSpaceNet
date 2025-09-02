@@ -199,6 +199,8 @@ class TrainingParams(object):
             self.optimizer = optim.Adam(
                 self.model.parameters(), lr=learning_rate, weight_decay=weight_decay
             )
+        elif optimizer.startswith("AdamW"):
+            self.optimizer = optim.AdamW(self.model.parameters(), lr=learning_rate, weight_decay=weight_decay)
         elif optimizer.startswith("SGD"):
             self.optimizer = optim.SGD(self.model.parameters(), lr=learning_rate)
         elif optimizer == "SGD Momentum":
@@ -211,7 +213,7 @@ class TrainingParams(object):
             )
         return self
 
-    def set_schedular(self, scheduler, step_size: int, gamma: float):
+    def set_schedular(self, scheduler, step_size: int, gamma: float, total_steps: int):
         """
         Sets the scheduler for learning rate decay.
 
@@ -229,6 +231,10 @@ class TrainingParams(object):
         elif scheduler == "ReduceLROnPlateau":
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=gamma,
                                                   patience=10)
+        elif scheduler == "OneCycleLR":
+            self.scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=1e-3, pct_start=0.1,
+                                                           total_steps=int(total_steps), div_factor=10,
+                                                           final_div_factor=100)
         else:
             raise ValueError(f"Scheduler {scheduler} is not defined.")
 
@@ -295,12 +301,6 @@ class TrainingParams(object):
         self.valid_dataset = torch.utils.data.DataLoader(
             valid_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_valid
         )
-        # self.train_dataset = torch.utils.data.DataLoader(
-        #     train_dataset, shuffle=True, batch_size=self.batch_size, drop_last=False
-        # )
-        # self.valid_dataset = torch.utils.data.DataLoader(
-        #     valid_dataset, shuffle=False, batch_size=32, drop_last=True
-        # )
         return self
 
 
@@ -458,14 +458,18 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 train_length += data[0].shape[0]
 
-                # try:
-                loss.backward()  # retain_graph=True
-                # except RuntimeError as r:
-                #     raise(f"linalg error: \n{r}")
+                try:
+                    loss.backward()  # retain_graph=True
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                except RuntimeError as r:
+                    print(f"linalg error: \n{r}")
 
-                # else:
-                # optimizer update
-                optimizer.step()
+                else:
+                    # optimizer update
+                    optimizer.step()
+
+                if isinstance(training_params.scheduler, lr_scheduler.OneCycleLR):
+                    training_params.scheduler.step()
 
                 pbar.update(1)
 
@@ -484,8 +488,12 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
             # Update scheduler
             if isinstance(training_params.scheduler, lr_scheduler.ReduceLROnPlateau):
                 training_params.scheduler.step(loss_valid_list[-1])
-            else:
+
+            elif isinstance(training_params.scheduler, lr_scheduler.StepLR):
                 training_params.scheduler.step()
+
+            elif not isinstance(training_params.scheduler, lr_scheduler.OneCycleLR):
+                raise NotImplementedError("update Step isn't implemented for this scheduler")
 
             # Report results
             result_txt = (f"[Epoch : {epoch + 1}/{training_params.epochs}]"

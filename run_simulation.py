@@ -2,6 +2,8 @@ from pathlib import Path
 from datetime import datetime
 from dataclasses import asdict
 import sys
+
+import numpy as np
 import torch
 
 from src.config.simulation_config import SimulationConfig
@@ -48,7 +50,8 @@ class SimulationRunner:
             .set_training_dataset(train_dataset)
             .set_schedular(config.training.scheduler,
                            config.training.step_size,
-                           config.training.gamma)
+                           config.training.gamma,
+                           np.ceil(0.9*len(train_dataset) / config.training.batch_size)*config.training.epochs)
         )
 
         model, _, _ = train(

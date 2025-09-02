@@ -3,7 +3,7 @@ import torch
 import cvxpy as cp
 import numpy as np
 
-from src.utils import build_phi, psd_proj, toeplitz_proj, hermitian_proj, svt
+from src.utils import build_phi, psd_proj, toeplitz_proj, hermitian_proj, svt, device
 from src.system_model import SystemModel
 
 
@@ -19,7 +19,7 @@ class CovReconstructor(ABC):
 
 class SampleCov(CovReconstructor):
     def __call__(self, x: torch.Tensor) -> torch.Tensor:
-        return sample_covariance(x)
+        return sample_covariance(x).to(device=device)
 
 
 class SpatialSmoothingReconstructor(CovReconstructor):
@@ -102,7 +102,7 @@ class AveragingReconstructor(CovReconstructor):
             start_idx = self.L - 1 - j
             Rx[:, :, j] = x_s_diff[:, start_idx:start_idx + self.L]
 
-        return Rx
+        return Rx.to(device=device)
 
 
 class ADMMReconstructor(CovReconstructor):
