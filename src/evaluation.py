@@ -51,6 +51,7 @@ from src.plotting import plot_spectrum, plot_admm_test_results
 from src.system_model import SystemModel
 from src.config.simulation_config import SystemModelParams
 from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
+from src.metrics import crb
 
 
 def get_model_based_method(method_name: str, system_model: SystemModel):
@@ -103,7 +104,7 @@ def get_model(model_name: str, params: dict, system_model: SystemModel):
     return model.to(device)
 
 
-def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str="test") -> dict:
+def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str = "test") -> dict:
     """
     Evaluate the DNN model on a given dataset.
 
@@ -365,56 +366,37 @@ def add_random_predictions(M: int, predictions: np.ndarray, algorithm: str):
     return predictions
 
 
-def evaluate_crb(dataset: list,
-                 params: SystemModelParams,
-                 mode: str="separate"):
-    u_snr = 10 ** (params.snr / 10)
-    if params.field_type.lower() == "far":
-        print("CRB calculation is not supported for Far Field yet.")
-        return None
-    elif params.field_type.lower() == "near":
-        if params.signal_nature.lower() == "non-coherent":
-            angles = []
-            distances = []
-            ucrb_cartzien = None
-            for i, data in enumerate(dataset):
-                _, _, labels, _ = data
-                angles.extend(*labels[:, :labels.shape[1] // 2][None, :].detach().numpy())
-                distances.extend(*labels[:, labels.shape[1] // 2:][None, :].detach().numpy())
-            angles = np.array(angles)
-            distances = np.array(distances)
-            snr_coeff = (1 + 1 / (u_snr * params.N))
-            ucrb_angle = (3 * 2 ** 2) / (2 * u_snr * params.T * (np.pi * np.cos(angles)) ** 2)
-            ucrb_angle *= (8 * params.N - 11) * (2 * params.N - 1)
-            ucrb_angle /= params.N * (params.N ** 2 - 1) * (params.N ** 2 - 4)
-            ucrb_angle *= snr_coeff
+def evaluate_crb(dataset: DataLoader,
+                 system_model: SystemModel):
+    params = system_model.params
+    if system_model.is_sparse_array and params.field_type.lower() == "far":
+        crb_sum = 0.0
+        count = 0
+        for i, data in enumerate(dataset):
+            x, sources_num, angles = data
+            angles = angles.to(device)
 
-            ucrb_distance = 6 * distances ** 2 * 2 ** 4 / (u_snr * params.T * np.pi ** 2)  # missing /wavelength
-            ucrb_distance *= snr_coeff
-            ucrb_distance /= params.N ** 2 * (params.N ** 2 - 1) * (params.N ** 2 - 4) * np.cos(angles) ** 4
-            num = 15 * distances ** 2
-            num += (30 / 2) * distances * (params.N - 1) * np.sin(angles)  # missing *wavelength
-            num += (1 / 2) ** 2 * (8 * params.N - 11) * (2 * params.N - 1) * np.sin(angles) ** 2  # missing * wavelength ** 2
-            ucrb_distance *= num
-            if mode == "cartesian":
-                # Need to calculate the cross term as well, and change coordinates.
-                ucrb_cross = - snr_coeff * (3 * distances)
-                ucrb_cross /= u_snr * params.T * np.pi ** 2 * (1 / 2) ** 3
-                ucrb_cross *= 15 * distances*(params.N - 1) + (1 / 2) * (8 * params.N - 11) * (2 * params.N - 1) * np.sin(angles)
-                ucrb_cross /= params.N * (params.N ** 2 - 1) * (params.N ** 2 - 4) * np.cos(angles) ** 3
+            validate_constant_sources_number(sources_num)
+            K = sources_num[0].item()
+            B = angles.shape[0]
+            # loop over items in the batch
+            count += B
+            for b in range(B):
+                crb_rad2 = crb.calculate_sncr_crb(S_positions=torch.from_numpy(system_model.array),
+                                                  thetas_deg=torch.rad2deg(angles[b, :]),
+                                                  snr_db=params.snr,
+                                                  L_snapshots=params.T)
 
-                #change coordinates
-                ucrb_cartzien = distances ** 2 * ucrb_angle + ucrb_distance
-                ucrb_cartzien -= distances ** 2 * np.sin(2 * angles) * ucrb_angle
-                # ucrb_cartzien += np.sin(2 * angles) * ucrb_distance
-                # ucrb_cartzien += 2 * distances * np.cos(2 * angles) * ucrb_cross
-                ucrb_cartzien = np.mean(ucrb_cartzien)
+                crb_sum += torch.mean(crb_rad2).item()**0.5
 
-            return {"Overall": ucrb_cartzien, "Angle": np.mean(ucrb_angle), "Distance": np.mean(ucrb_distance)}
-        else:
-            print("UCRB calculation for the coherent is not supported yet")
+        if count == 0:
+            raise ValueError("Dataset appears empty or K=0.")
+
+        overall_rmse_bound = (crb_sum / count)
+        return {"angle_crb": overall_rmse_bound}
+
     else:
-        print("Unrecognized field type.")
+        print("CRB for this scenario isn't supported yet")
     return
 
 
@@ -454,7 +436,7 @@ def evaluate(
         augmented_methods: list = None,
         subspace_methods: list = None,
         model_tmp: nn.Module = None,
-        cov_recon_method = 'sample',
+        cov_recon_method='sample',
         cov_recon_params: dict = None,
         admm_iterations: list = None):
     """
@@ -480,7 +462,7 @@ def evaluate(
     if cov_recon_method == 'admm':
         results = admm_evaluation(generic_test_dataset, criterions, system_model, model_tmp, subspace_methods,
                                   cov_recon_method, cov_recon_params, admm_iterations)
-        plot_admm_test_results(results)
+        # plot_admm_test_results(results)
 
     else:
         results = {}
@@ -504,7 +486,6 @@ def evaluate(
             #     print(f"{model_name} evaluation time: {time.time() - start}")
             #     res[model_name] = model_test_loss
 
-
             # Evaluate classical subspace methods
             cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)
             if isinstance(crit, ADMMObjective):
@@ -519,10 +500,12 @@ def evaluate(
                         criterion=crit,
                         algorithm=algorithm,
                         cov_recon=cov_recon)
-                    if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music", "r-music", "esprit"]:
+                    if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music",
+                                                                                                 "r-music", "esprit"]:
                         algorithm += "(SPS)"
                     print(f"{algorithm} evaluation time: {time.time() - start}")
                     res[algorithm] = loss
+    results['crb'] = evaluate_crb(generic_test_dataset, system_model)
 
     for crit_name, method_dict in results.items():
         print(f"\n=== Results for {crit_name} ===")
@@ -540,7 +523,6 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                     cov_recon_method='admm',
                     cov_recon_params: dict = None,
                     admm_iterations: list = None):
-
     results = {}
     max_learned_admm_iterations = model.num_iter if model is not None else 0
     if admm_iterations is None:
