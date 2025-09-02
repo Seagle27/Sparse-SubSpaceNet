@@ -383,7 +383,7 @@ def evaluate_crb(dataset: DataLoader,
             crb_rmse_rad = crb.calculate_sncr_crb_batched(
                 S_positions=array_pos,
                 thetas_deg=torch.rad2deg(angles),  # (B, K)
-                snr_db=snr,
+                snr_db=params.snr,
                 L_snapshots=params.T,
                 d=0.5,
                 sigma2=1.0,
