@@ -1,114 +1,163 @@
+import math
 import torch
-from src.utils import build_phi
+from src.utils import build_phi  # your existing Φ(S) builder
 
-
-
-# ---------- vec/unvec helpers (column-major) ----------
-def _vecF(M: torch.Tensor) -> torch.Tensor:
-    return M.transpose(-2, -1).reshape(-1)
-
-
-def _vecF_batch(M: torch.Tensor) -> torch.Tensor:
-    B, n, _ = M.shape
-    return M.transpose(1, 2).reshape(B, n * n).transpose(0, 1)
-
-
-def _unvecF_batch(V: torch.Tensor, n: int) -> torch.Tensor:
-    B = V.shape[1]
-    return V.transpose(0, 1).view(B, n, n).transpose(1, 2)
-
-
-# ---------- steering & derivative on filled grid ----------
-def _steering(U_pos: torch.Tensor, thetas: torch.Tensor, phase_scale: float) -> torch.Tensor:
-    # a_mk = exp(-j * phase_scale * u_m * sin(theta_k))
-    v = U_pos.to(dtype=torch.float64).reshape(-1, 1)
-    th = thetas.to(dtype=torch.float64).reshape(1, -1)
-    phase = -phase_scale * v * torch.sin(th)
-    return torch.exp(1j * phase).to(torch.complex128)
-
-
-def _steering_deriv(U_pos: torch.Tensor, theta_k: torch.Tensor, phase_scale: float) -> tuple[
-    torch.Tensor, torch.Tensor]:
-    v = U_pos.to(dtype=torch.float64)
-    th = theta_k.to(dtype=torch.float64)
-    a = torch.exp(1j * (-phase_scale * v * torch.sin(th)))
-    da = (1j * -phase_scale * v * torch.cos(th)) * a
-    return a.to(torch.complex128), da.to(torch.complex128)
-
-# ---------- main: SNCR CRB ----------
-def calculate_sncr_crb(S_positions: torch.Tensor,
-                       thetas_deg: torch.Tensor,
-                       snr_db: float,
-                       L_snapshots: int,
-                       d: float = 0.5):
+def _vecF_col_major_4d_to_2d(outer_BUUK: torch.Tensor) -> torch.Tensor:
     """
-    SNCR stochastic CRB (per-angle variances in rad^2) for a sparse array.
-
-    S_positions : 1D tensor of sparse sensor indices (integers, in units of d)
-    thetas_deg  : 1D tensor of K DOAs [deg]
-    snr_db      : per-sensor SNR per source [dB]
-    L_snapshots : number of snapshots **(not ADMM iters)**
-    d           : inter-element spacing in wavelengths; phase_scale = 2π d
+    Convert a batch of UxU matrices (last two dims) into column-major vecs.
+    Input : (B, U, U, K)
+    Output: (B, U*U, K)
+    vec_Fcol(M) = vec_column_major(M) = vec((M^T)^T) -> implemented as transpose before reshape.
     """
-    device = S_positions.device if isinstance(S_positions, torch.Tensor) else ("cuda" if torch.cuda.is_available() else "cpu")
-    thetas = torch.deg2rad(thetas_deg).to(device=device, dtype=torch.float64)
-    S_pos  = S_positions.to(device=device, dtype=torch.long)
+    B, U, _, K = outer_BUUK.shape
+    return outer_BUUK.transpose(1, 2).reshape(B, U * U, K)
 
-    # ---- 1) Phi defines the filled grid size U ----
-    # Use YOUR existing builder; it must return Φ ∈ R^{|S|×U}
-    Phi = build_phi(S_pos).to(device)
-    U   = Phi.shape[1]
-    U_pos = torch.arange(0, U, device=device, dtype=torch.float64)
+def _unvecF_col_major_2d_to_4d(J_BU2P: torch.Tensor, U: int) -> torch.Tensor:
+    """
+    Inverse of column-major vec, for a batch of vectors stacked along the last dim.
+    Input : (B, U*U, P)
+    Output: (B, P, U, U)
+    """
+    B, _, P = J_BU2P.shape
+    tmp = J_BU2P.transpose(1, 2).reshape(B, P, U, U)   # this equals M^T
+    return tmp.transpose(-1, -2)                       # back to M
 
-    # ---- 2) Steering on the filled grid with your phase scale ----
-    phase_scale = 2.0 * torch.pi * d            # matches exp(-j 2π d * pos * sinθ)
-    A = _steering(U_pos, thetas, float(phase_scale))
+def calculate_sncr_crb_batched(
+    S_positions: torch.Tensor,
+    thetas_deg: torch.Tensor,      # (B, K) or (K,)
+    snr_db: float | torch.Tensor,  # scalar or (B,) or (B,K)
+    L_snapshots: int | float | torch.Tensor,  # scalar or (B,)
+    d: float = 0.5,
+    sigma2: float = 1.0,
+    return_per_angle: bool = True,  # if False -> returns per-sample RMSE lower bound (rad)
+    dtype_complex: torch.dtype = torch.complex128,
+) -> torch.Tensor:
+    """
+    Batched SNCR stochastic CRB (proper complex Gaussian).
+    Returns:
+      - if return_per_angle=True : (B, K) per-angle variances in rad^2
+      - else                     : (B,)   RMSE lower bound per sample (rad), i.e. sqrt(mean diag)
+    """
+    device = S_positions.device if isinstance(S_positions, torch.Tensor) else (
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+    S = S_positions.to(device=device, dtype=torch.long)
 
-    # ---- 3) Map SNR -> p using actual column powers ----
-    snr_lin = 10.0 ** (snr_db / 10.0)
-    sigma2  = torch.tensor(1.0, device=device, dtype=torch.float64)
-    col_power = (A.abs()**2).mean(dim=0).real.clamp_min(1e-12)   # c_k
-    p = (snr_lin * sigma2 / col_power).to(torch.float64)         # (K,)
+    thetas_deg = torch.as_tensor(thetas_deg, dtype=torch.float64, device=device)
+    if thetas_deg.dim() == 1:
+        thetas_deg = thetas_deg.unsqueeze(0)  # (1, K)
+    B, K = thetas_deg.shape
 
-    # ---- 4) Build Jacobian J = [D_theta, D_p, d_sigma] ----
-    K  = thetas.numel()
-    D_p_cols, D_th_cols = [], []
-    for k in range(K):
-        a_k, da_k = _steering_deriv(U_pos, thetas[k], float(phase_scale))
-        D_p_cols.append(torch.kron(a_k.conj(), a_k))
-        D_th_cols.append(p[k] * (torch.kron(da_k.conj(), a_k) + torch.kron(a_k.conj(), da_k)))
-    D_p  = torch.stack(D_p_cols,  dim=1)                                     # (U^2, K)
-    D_th = torch.stack(D_th_cols, dim=1)                                     # (U^2, K)
-    d_sigma = _vecF(torch.eye(U, dtype=torch.complex128, device=device))     # (U^2,)
-    J = torch.cat([D_th, D_p, d_sigma[:, None]], dim=1)                      # (U^2, 2K+1)
+    # Φ from your sparse array → determines U
+    Phi = build_phi(S).to(device)                         # (|S|, U), real
+    S_count, U = Phi.shape
+    U_pos = torch.arange(0, U, dtype=torch.float64, device=device)
 
-    # ---- 5) Covariances on filled and sparse arrays ----
-    Pdiag = torch.diag(p.to(torch.complex128))
-    R_yy  = A @ Pdiag @ A.conj().T + sigma2.to(torch.complex128) * torch.eye(U, dtype=torch.complex128, device=device)
-    R_xx  = Phi.to(torch.complex128) @ R_yy @ Phi.to(torch.complex128).conj().T
+    # Phase-only steering on the filled grid
+    phase_scale = 2.0 * math.pi * d                       # matches exp(-j 2π d * u * sinθ)
+    th = torch.deg2rad(thetas_deg)                        # (B, K)
+    sin_th = torch.sin(th)                                # (B, K)
+    cos_th = torch.cos(th)                                # (B, K)
 
-    # ---- 6) Left/right weights via solves (no explicit inverse) ----
-    Y_right = torch.linalg.solve(R_xx, Phi.to(R_xx.dtype))                   # (|S|, |U|)
-    M_right = Phi.transpose(0,1).to(R_xx.dtype) @ Y_right
-    Y_left  = torch.linalg.solve(R_xx.transpose(0,1), Phi.to(R_xx.dtype))    # (|S|, |U|)
-    M_left  = Phi.transpose(0,1).to(R_xx.dtype) @ Y_left
+    # A(b,u,k) = exp(-j * phase_scale * u * sin(theta_bk))
+    phase = -phase_scale * U_pos.view(1, U, 1) * sin_th.view(B, 1, K)  # (B, U, K)
+    A = torch.exp(1j * phase).to(dtype_complex)                          # (B, U, K)
 
-    # ---- 7) Apply (M_left^T ⊗ M_right) to J via vec-trick: vec(M_right X M_left) ----
-    Xb = _unvecF_batch(J, U)                # (P, U, U), P=2K+1
-    Y  = torch.matmul(M_right, Xb)          # (P, U, U)
-    Y  = torch.matmul(Y, M_left)            # (P, U, U)
-    KJ = _vecF_batch(Y)                     # (U^2, P)
+    # dA/dθ(b,u,k) = (j * -phase_scale * u * cosθ_bk) * A(b,u,k)
+    coeff = (1j * -phase_scale) * U_pos.view(1, U, 1) * cos_th.view(B, 1, K)  # (B, U, K)
+    dA = (coeff.to(dtype_complex) * A)                                         # (B, U, K)
 
-    # ---- 8) FIM and CRB (proper complex -> scale by L) ----
-    L_t = torch.tensor(float(L_snapshots), device=device, dtype=torch.float64)
-    F = L_t * (J.conj().transpose(0,1) @ KJ)                                  # (2K+1, 2K+1)
+    # SNR -> p(b,k). For phase-only steering, column power is 1; we compute anyway for generality.
+    # If you ever add amplitude taper on the PHYSICAL array, prefer c_k from A_S = Φ A.
+    snr_db_t = torch.as_tensor(snr_db, dtype=torch.float64, device=device)
+    if snr_db_t.dim() == 0:
+        snr_db_t = snr_db_t.expand(B, K)
+    elif snr_db_t.dim() == 1:
+        snr_db_t = snr_db_t.view(-1, 1).expand(B, K)
+    snr_lin = 10.0 ** (snr_db_t / 10.0)                                       # (B, K)
 
+    sigma2_t = torch.as_tensor(sigma2, dtype=torch.float64, device=device)
+    # Column power on the filled grid (phase-only -> ones)
+    col_power = (A.abs() ** 2).mean(dim=1).real.clamp_min(1e-12)              # (B, K)
+    p = (snr_lin * sigma2_t) / col_power                                      # (B, K), real64
+    p_c = p.to(dtype_complex)                                                 # complex for products
+
+    # ---------- Build J = [D_theta, D_p, d_sigma] (all batched, no kron) ----------
+    # D_p(:,k) = vec( a_k * a_k^H ), using column-major vec  ⇒ vec = transpose then reshape
+    outer_aa = torch.einsum('buk,bvk->buvk', A, A.conj())                     # (B, U, U, K)
+    D_p = _vecF_col_major_4d_to_2d(outer_aa)                                   # (B, U^2, K)
+
+    # D_theta(:,k) = p_k * vec( dA_k a_k^H + a_k dA_k^H )
+    outer_da_a = torch.einsum('buk,bvk->buvk', dA, A.conj())                  # (B, U, U, K)
+    outer_a_da = torch.einsum('buk,bvk->buvk', A,  dA.conj())                 # (B, U, U, K)
+    Dth_4d = (outer_da_a + outer_a_da) * p_c.view(B, 1, 1, K)                 # (B, U, U, K)
+    D_theta = _vecF_col_major_4d_to_2d(Dth_4d)                                 # (B, U^2, K)
+
+    # d_sigma = vec(I_U) shared across batch
+    d_sigma = torch.eye(U, dtype=dtype_complex, device=device)
+    d_sigma_vec = d_sigma.transpose(-2, -1).reshape(U * U)                    # (U^2,)
+    d_sigma_B = d_sigma_vec.view(1, -1, 1).expand(B, -1, 1)                   # (B, U^2, 1)
+
+    # J: (B, U^2, 2K+1)
+    J = torch.cat([D_theta, D_p, d_sigma_B], dim=2)
+
+    # ---------- Covariances ----------
+    # R_yy(b) = A(b) diag(p_b) A(b)^H + sigma2 I
+    Ap = A * p_c.view(B, 1, K)                                                # (B, U, K)
+    R_yy = Ap @ A.conj().transpose(-2, -1) + sigma2_t.to(dtype_complex) * torch.eye(U, dtype=dtype_complex, device=device)  # (B, U, U)
+
+    # R_xx(b) = Φ R_yy(b) Φ^H
+    Phi_c = Phi.to(dtype_complex)
+    # Using bmm via einsum to avoid explicit expand:
+    R_xx = torch.einsum('su, buv, tv -> bst', Phi_c, R_yy, Phi_c.conj())      # (B, S, S)
+
+    # ---------- Left/right weights via batched solves ----------
+    # Solve R_xx(b) Y_right(b) = Φ   → Y_right: (B, S, U)
+    Phi_rhs = Phi_c.expand(B, -1, -1)
+    Y_right = torch.linalg.solve(R_xx, Phi_rhs)                                # (B, S, U)
+    M_right = torch.einsum('us, b s v -> b u v', Phi_c.T, Y_right)            # (B, U, U)
+
+    # Solve R_xx(b)^T Y_left(b) = Φ   → Y_left: (B, S, U)
+    Y_left  = torch.linalg.solve(R_xx.transpose(-2, -1), Phi_rhs)              # (B, S, U)
+    M_left  = torch.einsum('us, b s v -> b u v', Phi_c.T, Y_left)             # (B, U, U)
+
+    # ---------- Apply (M_left^T ⊗ M_right) to J via vec-trick ----------
+    # X_b = unvec(J_b) → (B, P, U, U), then Y = M_right X_b M_left
+    Ptot = 2 * K + 1
+    Xb = _unvecF_col_major_2d_to_4d(J, U)                                      # (B, Ptot, U, U)
+
+    # Multiply left/right in (B*P, U, U) space to leverage fast bmm
+    Xbp = Xb.reshape(B * Ptot, U, U)
+    M_right_rep = M_right.unsqueeze(1).expand(B, Ptot, U, U).reshape(B * Ptot, U, U)
+    M_left_rep  = M_left .unsqueeze(1).expand(B, Ptot, U, U).reshape(B * Ptot, U, U)
+    Y = M_right_rep @ Xbp @ M_left_rep                                         # (B*P, U, U)
+    Y = Y.reshape(B, Ptot, U, U)
+
+    # Back to vec (column-major): (B, U^2, Ptot)
+    KJ = _vecF_col_major_4d_to_2d(Y.permute(0, 2, 3, 1))  # (B, U^2, Ptot)
+
+    # ---------- FIM and CRB ----------
+    # F = L * J^H KJ
+    L_t = torch.as_tensor(L_snapshots, dtype=torch.float64, device=device)
+    if L_t.dim() == 0:
+        L_t = L_t.expand(B)
+    F = torch.einsum('bpu, buq -> bpq', J.conj().transpose(-2, -1), KJ)        # (B, Ptot, Ptot)
+    F = (F + F.conj().transpose(-2, -1)) * 0.5                                 # Hermitize
+    F = F * L_t.view(B, 1, 1)
+
+    # Invert batch
     try:
-        CRB_beta = torch.linalg.inv(F)
+        CRB = torch.linalg.inv(F)
     except RuntimeError:
-        CRB_beta = torch.linalg.pinv(F)
+        CRB = torch.linalg.pinv(F, rcond=1e-12)
 
-    CRB_theta = CRB_beta[:K, :K].real
-    return torch.diag(CRB_theta).clamp_min(0.0)  # (K,) rad^2
+    # θ-block diag → per-angle variances (B, K)
+    CRB_theta = CRB[:, :K, :K].real
+    per_angle_var = torch.diagonal(CRB_theta, dim1=-2, dim2=-1).clamp_min(0.0) # (B, K)
 
+    if return_per_angle:
+        return per_angle_var  # (B, K) in rad^2
 
+    # Else, per-sample RMSE lower bound (rad): sqrt(mean_k variance_k)
+    rmse_lb = torch.sqrt(per_angle_var.mean(dim=1))                             # (B,)
+    return rmse_lb

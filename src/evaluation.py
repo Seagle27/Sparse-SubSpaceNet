@@ -377,20 +377,20 @@ def evaluate_crb(dataset: DataLoader,
             angles = angles.to(device)
 
             validate_constant_sources_number(sources_num)
-            K = sources_num[0].item()
-            B = angles.shape[0]
-            # loop over items in the batch
-            count += B
-            for b in range(B):
-                crb_rad2 = crb.calculate_sncr_crb(S_positions=torch.from_numpy(system_model.array),
-                                                  thetas_deg=torch.rad2deg(angles[b, :]),
-                                                  snr_db=params.snr,
-                                                  L_snapshots=params.T)
+            count += angles.shape[0]
+            array_pos = torch.from_numpy(system_model.array).to(device=device, dtype=torch.long)
 
-                crb_sum += torch.mean(crb_rad2).item()**0.5
+            crb_rmse_rad = crb.calculate_sncr_crb_batched(
+                S_positions=array_pos,
+                thetas_deg=torch.rad2deg(angles),  # (B, K)
+                snr_db=snr,
+                L_snapshots=params.T,
+                d=0.5,
+                sigma2=1.0,
+                return_per_angle=False,  # we want (B,) RMSE lower bound
+            )
 
-        if count == 0:
-            raise ValueError("Dataset appears empty or K=0.")
+            crb_sum += torch.sum(crb_rmse_rad)
 
         overall_rmse_bound = (crb_sum / count)
         return {"angle_crb": overall_rmse_bound}
