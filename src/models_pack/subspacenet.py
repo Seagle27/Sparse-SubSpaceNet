@@ -43,7 +43,7 @@ class SubspaceNet(ParentModel):
     """
 
     def __init__(self, tau: int, diff_method: str = "root_music",
-                 system_model: SystemModel = None, field_type: str = "Far", eigen_regularization_weight=1,
+                 system_model: SystemModel = None, field_type: str = "Far", eigen_regularization_weight=0,
                  criterion="rmspe"):
         """Initializes the SubspaceNet model.
 
