@@ -1,32 +1,3 @@
-"""
-Subspace-Net
-
-Details
-----------
-Name: evaluation.py
-Authors: D. H. Shmuel
-Created: 01/10/21
-Edited: 17/03/23
-
-Purpose
-----------
-This module provides functions for evaluating the performance of Subspace-Net and others Deep learning benchmarks,
-add for conventional subspace methods. 
-This scripts also defines function for plotting the methods spectrums.
-In addition, 
-
-
-Functions:
-----------
-evaluate_dnn_model: Evaluate the DNN model on a given dataset.
-evaluate_augmented_model: Evaluate an augmented model that combines a SubspaceNet model.
-evaluate_model_based: Evaluate different model-based algorithms on a given dataset.
-add_random_predictions: Add random predictions if the number of predictions
-    is less than the number of sources.
-evaluate: Wrapper function for model and algorithm evaluations.
-
-
-"""
 # Imports
 import os
 import time
@@ -39,19 +10,18 @@ from typing import List
 
 # Internal imports
 from src.utils import *
-from src.criterions import RMSPELoss, ADMMObjective
+from src.metrics.criterions import RMSPELoss, ADMMObjective
 from src.methods import MVDR
 from src.methods_pack.music import MUSIC
 from src.methods_pack.root_music import RootMusic
 from src.methods_pack.esprit import ESPRIT
 from src.methods_pack.mle import MLE
-from src.models import (ModelGenerator, SubspaceNet, DCDMUSIC, DeepAugmentedMUSIC,
-                        DeepCNN, DeepRootMUSIC, TransMUSIC, SparseNet)
-from src.plotting import plot_spectrum, plot_admm_test_results
+from src.models import (ModelGenerator, SubspaceNet)
+from src.plotting import plot_spectrum
 from src.system_model import SystemModel
-from src.config.simulation_config import SystemModelParams
 from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
 from src.metrics import crb
+from src.eval.reporting import normalize_result
 
 
 def get_model_based_method(method_name: str, system_model: SystemModel):
@@ -121,7 +91,7 @@ def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str = "test"
 
     # Initialize values
     overall_loss_angle = 0.0
-    overall_accuracy = 0.0
+    overall_accuracy = None
     test_length = 0
     # Set model to eval mode
     model.eval()
@@ -150,10 +120,7 @@ def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str = "test"
     overall_loss_angle /= test_length
     if overall_accuracy is not None:
         overall_accuracy /= test_length
-    overall_loss = {"loss": overall_loss_angle,
-                    "Accuracy": overall_accuracy}
-
-    return overall_loss
+    return normalize_result((overall_loss_angle, overall_accuracy))
 
 
 def evaluate_augmented_model(
@@ -308,9 +275,7 @@ def evaluate_model_based(
 
         overall_loss /= test_length
         overall_acc /= test_length
-        overall_loss = {"loss": overall_loss,
-                        "Accuracy": overall_acc}
-        return overall_loss
+        return normalize_result((overall_loss, overall_acc))
 
 
 def evaluate_admm_convergence(dataset: DataLoader,
@@ -339,7 +304,7 @@ def evaluate_admm_convergence(dataset: DataLoader,
                 test_length += data[0].shape[0]
 
         overall_loss /= test_length
-        return overall_loss
+        return normalize_result(overall_loss)
 
 
 def add_random_predictions(M: int, predictions: np.ndarray, algorithm: str):
@@ -371,29 +336,32 @@ def evaluate_crb(dataset: DataLoader,
     params = system_model.params
     if system_model.is_sparse_array and params.field_type.lower() == "far":
         crb_sum = 0.0
-        count = 0
+        test_length = 0
         for i, data in enumerate(dataset):
             x, sources_num, angles = data
             angles = angles.to(device)
 
             validate_constant_sources_number(sources_num)
-            count += angles.shape[0]
             array_pos = torch.from_numpy(system_model.array).to(device=device, dtype=torch.long)
 
             crb_rmse_rad = crb.calculate_sncr_crb_batched(
                 S_positions=array_pos,
-                thetas_deg=torch.rad2deg(angles),  # (B, K)
-                snr_db=snr,
+                thetas=angles,  # (B, K)
+                snr_db=params.snr,
                 L_snapshots=params.T,
                 d=0.5,
                 sigma2=1.0,
                 return_per_angle=False,  # we want (B,) RMSE lower bound
             )
+            if data[0].dim() == 2:
+                test_length += 1
+            else:
+                test_length += data[0].shape[0]
 
             crb_sum += torch.sum(crb_rmse_rad)
 
-        overall_rmse_bound = (crb_sum / count)
-        return {"angle_crb": overall_rmse_bound}
+        overall_rmse_bound = crb_sum / test_length
+        return normalize_result(overall_rmse_bound)
 
     else:
         print("CRB for this scenario isn't supported yet")
@@ -541,7 +509,7 @@ def admm_evaluation(generic_test_dataset: DataLoader,
             if model is not None and num_iterations <= max_learned_admm_iterations:
                 # Evaluate DNN model if given
                 model.set_num_test_iterations(num_iterations)
-                model_test_loss = evaluate_dnn_model(model, generic_test_dataset).get('loss')
+                model_test_loss = evaluate_dnn_model(model, generic_test_dataset)
                 model_name = model._get_name()
                 res[f"{model_name}_{num_iterations}"] = model_test_loss
 
@@ -558,7 +526,7 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                         system_model,
                         criterion=crit,
                         algorithm=algorithm,
-                        cov_recon=cov_recon).get('loss')
+                        cov_recon=cov_recon)
                     if system_model.params.signal_nature == "coherent" and algorithm.lower() in ["1d-music", "2d-music",
                                                                                                  "r-music", "esprit"]:
                         algorithm += "(SPS)"

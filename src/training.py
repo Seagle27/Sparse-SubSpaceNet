@@ -33,15 +33,13 @@ import copy
 from pathlib import Path
 import torch.optim as optim
 from datetime import datetime
-from torch.autograd import Variable
 from tqdm import tqdm
 from torch.optim import lr_scheduler
 from sklearn.model_selection import train_test_split
 # internal imports
-from src.criterions import *
-from src.system_model import SystemModel, SystemModelParams
-from src.models import (SubspaceNet, DeepCNN, DeepAugmentedMUSIC,
-                        ModelGenerator, DCDMUSIC, TransMUSIC, DeepRootMUSIC, SparseNet)
+from src.metrics.criterions import *
+from src.system_model import SystemModelParams
+from src.models import (ModelGenerator)
 from src.evaluation import evaluate_dnn_model
 from src.data_handler import collate_fn, SameLengthBatchSampler
 

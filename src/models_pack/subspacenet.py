@@ -3,16 +3,15 @@ SubspaceNet: model-based deep learning algorithm as described in:
         [2] "SubspaceNet: Deep Learning-Aided Subspace methods for DoA Estimation".
 """
 
-import torch.nn as nn
 from src.models_pack.parent_model import ParentModel
 from src.system_model import SystemModel
 from src.utils import *
-from src.criterions import EigenRegularizationLoss
+from src.metrics.criterions import EigenRegularizationLoss
 
 from src.methods_pack.music import MUSIC
 from src.methods_pack.esprit import ESPRIT
 from src.methods_pack.root_music import RootMusic
-from src.criterions import set_criterions
+from src.metrics.criterions import set_criterions
 
 class SubspaceNet(ParentModel):
     """SubspaceNet is model-based deep learning model for generalizing DOA estimation problem,

@@ -1,7 +1,6 @@
 import torch.nn as nn
 
 from src.system_model import SystemModel
-from src.criterions import set_criterions
 from src.utils import validate_constant_sources_number, device
 
 class ParentModel(nn.Module):
