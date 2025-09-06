@@ -196,7 +196,7 @@ class SimulationRunner:
                             for k in result.keys():
                                 for test in result[k].keys():
                                     for res_type in result[k][test].keys():
-                                        loss[k][test][res_type] += result[k][test]
+                                        loss[k][test][res_type] += result[k][test][res_type]
                 for k in loss.keys():  # Iterate over loss functions
                     for test in loss[k].keys():
                         for res_type in loss[k][test].keys():

@@ -35,16 +35,16 @@ def normalize_result(result: Any) -> Dict[str, float | None]:
             raise ValueError("Result dict must contain 'loss'.")
         # common aliases for accuracy
         acc_key = next((k for k in ('accuracy','acc','top1') if k in result), None)
-        acc = None if acc_key is None else _to_float(result[acc_key])
-        return {'loss': loss, 'accuracy': acc}
+        acc = 0.0 if acc_key is None else _to_float(result[acc_key])
+        return {'loss': loss, 'Accuracy': acc}
 
     # tuple/list case
     if isinstance(result, (tuple, list)):
         if not result:
             raise ValueError("Empty result.")
-        if len(result) == 1:
-            return {'loss': _to_float(result[0]), 'accuracy': None}
-        return {'loss': _to_float(result[0]), 'accuracy': _to_float(result[1])}
+        if len(result) == 1 or (len(result) == 2 and result[1] is None):
+            return {'loss': _to_float(result[0]), 'Accuracy': 0.0}
+        return {'loss': _to_float(result[0]), 'Accuracy': _to_float(result[1])}
 
     # scalar case
-    return {'loss': _to_float(result), 'accuracy': None}
+    return {'loss': _to_float(result), 'Accuracy': 0}
