@@ -363,24 +363,30 @@ def parse_loss_results_for_plotting(loss_results: dict):
 def print_loss_results_from_simulation(loss_results: dict):
     """
     Print the loss results from the simulation.
+    Compatible with the nested loss_dict format:
+    scenario -> value -> method -> test -> res_type -> metric_value
     """
-    for test, value_dict in loss_results.items():
-        print("#" * 10 + f"{test} TEST RESULTS" + "#" * 10)
-        for test_value, results in value_dict.items():
-            if test.lower() == "snr":
-                print(f"{test} = {test_value} [dB]: ")
+    for scenario_key, values_dict in loss_results.items():
+        print("#" * 10 + f" {scenario_key.upper()} TEST RESULTS " + "#" * 10)
+
+        for scenario_value, methods_dict in values_dict.items():
+            if scenario_key.lower() == "snr":
+                print(f"{scenario_key} = {scenario_value} [dB]:")
             else:
-                print(f"{test} = {test_value}: ")
-            for method, loss in results.items():
-                txt = f"\t{method.upper(): <30}: "
-                for key, value in loss.items():
-                    if value is not None:
-                        if key == "Accuracy":
-                            txt += f"{key}: {value * 100:.2f} %|"
-                        else:
-                            txt += f"{key}: {value:.6e} |"
-                print(txt)
-            print("\n")
+                print(f"{scenario_key} = {scenario_value}:")
+
+            for method, tests_dict in methods_dict.items():
+                print(f"\t{method.upper(): <30}:")
+                for test, metrics_dict in tests_dict.items():
+                    txt = f"\t  {test: <20}: "
+                    for metric_name, metric_value in metrics_dict.items():
+                        if metric_value is not None:
+                            if metric_name.lower() == "accuracy":
+                                txt += f"{metric_name}: {metric_value * 100:.2f} % | "
+                            else:
+                                txt += f"{metric_name}: {metric_value:.6e} | "
+                    print(txt)
+                print("")
         print("\n")
 
 

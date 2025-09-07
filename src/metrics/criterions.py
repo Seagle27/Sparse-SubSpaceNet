@@ -116,15 +116,10 @@ class RMSPELoss(nn.Module):
         loss = criterion(predictions, targets)
     """
 
-    def __init__(self, balance_factor=None):
+    def __init__(self):
         super(RMSPELoss, self).__init__()
-        if balance_factor is None:
-            self.balance_factor = nn.Parameter(torch.Tensor([BALANCE_FACTOR])).to(device).to(torch.float64)
-        else:
-            self.balance_factor = nn.Parameter(torch.Tensor([balance_factor])).to(device).to(torch.float64)
 
-    def forward(self, doa_predictions: torch.Tensor, doa_targets: torch.Tensor,
-                distance_predictions: torch.Tensor = None, distance_targets: torch.Tensor = None):
+    def forward(self, doa_predictions: torch.Tensor, doa_targets: torch.Tensor):
         """
         Compute the RMSPE loss between the predictions and target values.
         The forward method takes two input tensors: doa_predictions and doa,
@@ -166,18 +161,9 @@ class RMSPELoss(nn.Module):
         optimal_angle_errors = diff_matrix_angle[batch_indices, row_indices, assignments]
         rmspe_angle = torch.sqrt(torch.sum(optimal_angle_errors ** 2, dim=1) / num_sources)
 
-        if distance_targets is None:
-            total_loss = torch.sum(rmspe_angle)
-            return total_loss
-        else:
-            diff_matrix_distance = distance_predictions.unsqueeze(2) - distance_targets.unsqueeze(1)
-            optimal_distance_errors = diff_matrix_distance[batch_indices, row_indices, assignments]
-            rmspe_distance = torch.sqrt(torch.sum(optimal_distance_errors ** 2, dim=1) / num_sources)
-            combined_loss = self.balance_factor * rmspe_angle + (1 - self.balance_factor) * rmspe_distance
-            total_loss = torch.sum(combined_loss)
-            total_angle_loss = torch.sum(rmspe_angle)
-            total_distance_loss = torch.sum(rmspe_distance)
-            return total_loss, total_angle_loss, total_distance_loss
+
+        total_loss = torch.sum(rmspe_angle)
+        return total_loss
 
     @staticmethod
     def batch_hungarian_assignments(cost_matrices):
@@ -211,9 +197,6 @@ class RMSPELoss(nn.Module):
         diff = pred - target  # Broadcasting happens here.
         diff = (diff + torch.pi / 2) % torch.pi - torch.pi / 2
         return diff
-
-    def adjust_balance_factor(self):
-        self.balance_factor = 0.1
 
 
 class MSPELoss(nn.Module):

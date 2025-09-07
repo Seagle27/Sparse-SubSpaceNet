@@ -300,6 +300,9 @@ def sample_covariance(x: torch.Tensor):
 
 def get_cov_reconstruction_method(method: str, sys_model: SystemModel, **kwargs):
     method = method.lower()
+    if not sys_model.is_sparse_array:
+        method = "sample"
+
     if method == 'sample':
         if sys_model.params.signal_nature == 'coherent':
             recon = SpatialSmoothingReconstructor()
