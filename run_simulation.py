@@ -51,7 +51,7 @@ class SimulationRunner:
             .set_schedular(config.training.scheduler,
                            config.training.step_size,
                            config.training.gamma,
-                           np.ceil(0.9*len(train_dataset) / config.training.batch_size)*config.training.epochs)
+                           np.ceil(((0.9*len(train_dataset)) / config.training.batch_size))*config.training.epochs)
         )
 
         model, _, _ = train(

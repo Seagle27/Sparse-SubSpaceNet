@@ -228,11 +228,20 @@ class TrainingParams(object):
             self.scheduler = lr_scheduler.StepLR(self.optimizer, step_size=step_size, gamma=gamma)
         elif scheduler == "ReduceLROnPlateau":
             self.scheduler = lr_scheduler.ReduceLROnPlateau(self.optimizer, mode="min", factor=gamma,
-                                                  patience=10)
+                                                  patience=7, threshold=7e-4)
         elif scheduler == "OneCycleLR":
-            self.scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=1e-3, pct_start=0.1,
-                                                           total_steps=int(total_steps), div_factor=10,
-                                                           final_div_factor=100)
+            self.scheduler = optim.lr_scheduler.OneCycleLR(self.optimizer, max_lr=2e-4, pct_start=0.55,
+                                                           total_steps=int(total_steps), div_factor=100,
+                                                           final_div_factor=2000, cycle_momentum=False)
+        elif scheduler == "CustomLR":
+            warmup_steps = int(0.15 * total_steps)
+
+            sched_warmup = optim.lr_scheduler.LinearLR(self.optimizer, start_factor=1e-3, end_factor=1.0, total_iters=warmup_steps)
+            sched_cosine = optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=total_steps - warmup_steps, eta_min=self.learning_rate * 0.02)
+
+            self.scheduler = optim.lr_scheduler.SequentialLR(self.optimizer, schedulers=[sched_warmup, sched_cosine],
+                                     milestones=[warmup_steps])
+
         else:
             raise ValueError(f"Scheduler {scheduler} is not defined.")
 
@@ -302,6 +311,42 @@ class TrainingParams(object):
         return self
 
 
+import math, copy, torch
+
+class EarlyStopping:
+    def __init__(self, mode="min", patience=10, min_delta=1e-4, restore_best=True):
+        assert mode in {"min","max"}
+        self.mode = mode
+        self.patience = patience
+        self.min_delta = min_delta
+        self.restore_best = restore_best
+        self.best = math.inf if mode == "min" else -math.inf
+        self.bad_epochs = 0
+        self.best_state = None
+
+    def _improved(self, value):
+        if self.mode == "min":
+            return (self.best - value) > self.min_delta
+        else:
+            return (value - self.best) > self.min_delta
+
+    def step(self, value, model=None):
+        """Return True if training should stop."""
+        if self._improved(value):
+            self.best = value
+            self.bad_epochs = 0
+            if self.restore_best and model is not None:
+                self.best_state = copy.deepcopy(model.state_dict())
+        else:
+            self.bad_epochs += 1
+        return self.bad_epochs >= self.patience
+
+    def restore(self, model):
+        if self.restore_best and self.best_state is not None:
+            model.load_state_dict(self.best_state)
+
+
+
 def train(
         training_parameters: TrainingParams,
         plot_curves: bool = True,
@@ -355,14 +400,14 @@ def train(
     if plot_curves:
         if acc_train_list is not None and acc_valid_list is not None:
             fig_acc = plot_accuracy_curve(
-                list(range(1, training_parameters.epochs + 1)), acc_train_list, acc_valid_list,
+                list(range(1, len(acc_train_list) + 1)), acc_train_list, acc_valid_list,
                 model_name=model._get_name()
             )
             if save_figures:
                 fig_acc.savefig(figures_saving_path / f"Accuracy_{model.get_model_name()}_{dt_string_for_save}.png")
             fig_acc.show()
         fig_loss = plot_learning_curve(
-            list(range(1, training_parameters.epochs + 1)), loss_train_list, loss_valid_list,
+            list(range(1, len(loss_valid_list) + 1)), loss_train_list, loss_valid_list,
             model_name=model._get_name(),
             angle_train_loss=loss_train_list_angles,
             angle_valid_loss=loss_valid_list_angles,
@@ -426,6 +471,11 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     total_batches = len(training_params.train_dataset)
     total_iterations = training_params.epochs * total_batches  # Total number of batches across all epochs
     # torch.autograd.set_detect_anomaly(True)
+    max_norm = 3
+
+    clip_count = 0
+    step_count = 0
+    early = EarlyStopping(mode="min", patience=15, min_delta=1e-4, restore_best=True)
 
     # Initialize tqdm once for the entire training process
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
@@ -458,18 +508,29 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 try:
                     loss.backward()  # retain_graph=True
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                    total_norm = torch.norm(
+                        torch.stack([p.grad.detach().norm(2) for p in model.parameters() if p.grad is not None]),
+                        2
+                    ).item()
+
+                    if total_norm > max_norm:
+                        clip_count += 1
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 except RuntimeError as r:
                     print(f"linalg error: \n{r}")
 
                 else:
                     # optimizer update
                     optimizer.step()
+                    if isinstance(training_params.scheduler, (lr_scheduler.OneCycleLR, lr_scheduler.SequentialLR)):
+                        training_params.scheduler.step()
 
-                if isinstance(training_params.scheduler, lr_scheduler.OneCycleLR):
-                    training_params.scheduler.step()
-
+                step_count += 1
                 pbar.update(1)
+                if step_count % 200 == 0:
+                    print(f"Clipping occurred in {clip_count} out of {step_count} steps")
+                    clip_count = 0
+                    step_count = 0
 
             ####################################################################################
             epoch_train_loss /= train_length
@@ -490,7 +551,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
             elif isinstance(training_params.scheduler, lr_scheduler.StepLR):
                 training_params.scheduler.step()
 
-            elif not isinstance(training_params.scheduler, lr_scheduler.OneCycleLR):
+            elif not isinstance(training_params.scheduler, (lr_scheduler.OneCycleLR, lr_scheduler.SequentialLR)):
                 raise NotImplementedError("update Step isn't implemented for this scheduler")
 
             # Report results
@@ -514,6 +575,11 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 # Saving State Dict
                 best_model_wts = copy.deepcopy(model.state_dict())
                 torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
+
+            if early.step(valid_loss.get("loss"), model):
+                print("Early Stopping, plateau reached, epoch:", epoch)
+                break
+
     # Training complete
     time_elapsed = time.time() - since
     print("\n--- Training summary ---")
@@ -525,6 +591,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
     res = {"model": model, "loss_train_list": loss_train_list, "loss_valid_list": loss_valid_list,
            "reg_loss_train_list": reg_loss_train_list}
+    print(f"Clipping occurred in {clip_count} out of {step_count} steps "
+          f"({100.0 * clip_count / step_count:.2f}% of the time).")
     if len(acc_train_list) > 0 and len(acc_valid_list) > 0:
         res["acc_train_list"] = acc_train_list
         res["acc_valid_list"] = acc_valid_list
@@ -679,42 +747,3 @@ def get_simulation_filename(
         f"bias={system_model_params.bias}_"
         f"sv_noise={system_model_params.sv_noise_var}"
     )
-
-
-def get_model_filename(system_model_params: SystemModelParams, model_name: str):
-    """
-
-    Parameters
-    ----------
-    system_model_params
-    model_config
-
-    Returns
-    -------
-    file name to the wieghts of a network.
-    different from get_simulation_filename by not considering parameters that are not relevant to the network itself.
-    """
-    if model_name.lower() == "DCDMUSIC":
-        return (
-                f"{model_name}_"
-                + f"N={system_model_params.N}_"
-                + f"tau=8_"
-                + f"M={system_model_params.M}_"
-                + f"{system_model_params.signal_type}_"
-                + f"SNR={system_model_params.snr}_"
-                + f"diff_method=music_1D_"
-                + f"{system_model_params.field_type}_field_"
-                + f"{system_model_params.signal_nature}"
-        )
-    else:
-        return (
-                f"{model_name}_"
-                + f"N={system_model_params.N}_"
-                + f"tau={model_config.tau}_"
-                + f"M={system_model_params.M}_"
-                + f"{system_model_params.signal_type}_"
-                + f"SNR={system_model_params.snr}_"
-                + f"diff_method={model_config.diff_method}_"
-                + f"{system_model_params.field_type}_field_"
-                + f"{system_model_params.signal_nature}"
-        )
