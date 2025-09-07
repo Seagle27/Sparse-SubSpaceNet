@@ -489,9 +489,12 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                 if num_iterations <= eval_model.get_max_iterations():
                     # Evaluate DNN models if given
                     eval_model.set_num_test_iterations(num_iterations)
-                    model_test_loss = evaluate_dnn_model(eval_model, generic_test_dataset)
-                    model_name = eval_model._get_name()
-                    res[f"{model_name}_{eval_model.get_max_iterations()}_{num_iterations}"] = model_test_loss
+                    for subspace_method in subspace_methods:
+                        eval_model.set_test_subspace_method(
+                            subspace_method)  # TODO: Make it in a more robust and configurable way
+                        model_test_loss = evaluate_dnn_model(eval_model, generic_test_dataset)
+                        model_name = eval_model._get_name()
+                        res[f"{model_name}_{eval_model.get_max_iterations()}_{subspace_method}_{num_iterations}"] = model_test_loss
 
             # Evaluate classical methods:
             cov_recon_params['max_iter'] = num_iterations

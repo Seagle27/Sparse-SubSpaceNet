@@ -366,7 +366,7 @@ class MUSIC(SubspaceMethod):
         if self.system_model.params.field_type.startswith("Far"):
             # if it's the Far field case, need to init angles range.
             doa_range = np.deg2rad(self.system_model.params.doa_range)
-            self.angels = torch.arange(doa_range[0], doa_range[1], torch.pi / 1440, device=device,
+            self.angels = torch.arange(doa_range[0], doa_range[1], torch.pi / 2880, device=device,
                                        dtype=torch.float64).requires_grad_(True).to(torch.float64)
         elif self.system_model.params.field_type.startswith("Near"):
             # if it's the Near field, there are 3 possabilities.

@@ -14,6 +14,7 @@ class SparseCovADMMUnfold(ParentModel):
 
         self.num_iter = num_iterations
         self.subspace_method = self.get_model_based_method(subspace_method, system_model)
+        self.test_subspace_method =  self.subspace_method
 
         self.phi = build_phi(self.system_model.array)  # (|S|,|U|)
         self.phi_H = self.phi.t()
@@ -93,7 +94,13 @@ class SparseCovADMMUnfold(ParentModel):
 
     def forward(self, x: torch.Tensor, num_sources: int, phase='train'):
         R = self.get_learned_covariance(x, phase)
-        doa_prediction, _, _ = self.subspace_method(R, num_sources)
+        if phase == "train":
+            doa_prediction, _, _ = self.subspace_method(R, num_sources)
+        elif phase == "test":
+            doa_prediction, _, _ = self.test_subspace_method(R, num_sources)
+        else:
+            raise NotImplementedError(f"Unknown phase {phase}")
+
         return doa_prediction
 
     def training_step(self, batch):
@@ -139,7 +146,7 @@ class SparseCovADMMUnfold(ParentModel):
         -------
         an instance of the method.
         """
-        if method_name.lower().endswith("music_1d"):
+        if method_name.lower().endswith("music"):
             return MUSIC(system_model=system_model, estimation_parameter="angle")
         if method_name.lower().endswith("2d-music"):
             return MUSIC(system_model=system_model, estimation_parameter="angle, range")
@@ -161,3 +168,6 @@ class SparseCovADMMUnfold(ParentModel):
 
     def get_max_iterations(self):
         return self.rho_m.shape[0]
+
+    def set_test_subspace_method(self, subspace_method):
+        self.test_subspace_method = self.get_model_based_method(subspace_method, self.system_model)
