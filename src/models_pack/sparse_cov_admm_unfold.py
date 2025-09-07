@@ -156,4 +156,8 @@ class SparseCovADMMUnfold(ParentModel):
                 set_criterions(test_criterion, self.system_model.array)[0]
 
     def set_num_test_iterations(self, num_iter: int) -> None:
-        self.test_iterations = num_iter
+        if num_iter <= self.get_max_iterations():
+            self.test_iterations = num_iter
+
+    def get_max_iterations(self):
+        return self.rho_m.shape[0]
