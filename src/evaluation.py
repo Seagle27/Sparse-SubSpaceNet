@@ -16,7 +16,7 @@ from src.methods_pack.music import MUSIC
 from src.methods_pack.root_music import RootMusic
 from src.methods_pack.esprit import ESPRIT
 from src.methods_pack.mle import MLE
-from src.models import (ModelGenerator, SubspaceNet)
+from src.models import (ModelGenerator, SubspaceNet, get_model)
 from src.plotting import plot_spectrum
 from src.system_model import SystemModel
 from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
@@ -44,34 +44,6 @@ def get_model_based_method(method_name: str, system_model: SystemModel):
         return RootMusic(system_model)
     if method_name.lower().endswith("esprit"):
         return ESPRIT(system_model)
-
-
-def get_model(model_name: str, params: dict, system_model: SystemModel):
-    model_config = (
-        ModelGenerator()
-        .set_model_type(model_name)
-        .set_system_model(system_model)
-        .set_model_params(params)
-        .set_model()
-    )
-    model = model_config.model
-    path = os.path.join(Path(__file__).parent.parent, "data", "weights", "final_models", model.get_model_file_name())
-    try:
-        model.load_state_dict(torch.load(path))
-    except FileNotFoundError as e:
-        print("####################################")
-        print(e)
-        print("####################################")
-        try:
-            print(f"Model {model_name} not found in final_models, trying to load from temp weights.")
-            path = os.path.join(Path(__file__).parent.parent, "data", "weights", model.get_model_file_name())
-            model.load_state_dict(torch.load(path))
-        except FileNotFoundError as e:
-            print("####################################")
-            print(e)
-            print("####################################")
-            warnings.warn(f"get_model: Model {model_name} not found")
-    return model.to(device)
 
 
 def evaluate_dnn_model(model: nn.Module, dataset: DataLoader, mode: str = "test") -> dict:
@@ -430,7 +402,7 @@ def evaluate(
     # TODO: FIX and cleanup augmented methods
     if cov_recon_method == 'admm':
         results = admm_evaluation(generic_test_dataset, criterions, system_model, model_tmp, subspace_methods,
-                                  cov_recon_method, cov_recon_params, admm_iterations)
+                                  cov_recon_method, cov_recon_params, admm_iterations, models=models)
         # plot_admm_test_results(results)
 
     else:
@@ -491,9 +463,15 @@ def admm_evaluation(generic_test_dataset: DataLoader,
                     subspace_methods: list = None,
                     cov_recon_method='admm',
                     cov_recon_params: dict = None,
-                    admm_iterations: list = None):
+                    admm_iterations: list = None,
+                    models:dict = None):
     results = {}
-    max_learned_admm_iterations = model.num_iter if model is not None else 0
+    eval_models = [model] if model is not None else []
+    if models:
+        for model_name, params in models.items():
+            if model_name == "LearnedADMM":
+                eval_models.append(get_model(model_name, params, system_model))
+
     if admm_iterations is None:
         admm_iterations = [model.num_iter]
     for crit in criterions:
@@ -502,17 +480,18 @@ def admm_evaluation(generic_test_dataset: DataLoader,
         res = results.setdefault(crit_name, {})
         print(f"\n=== Evaluating criterion {crit_name} ===")
 
-        if model is not None:
-            model.set_test_criteria(crit)
+        for eval_model in eval_models:
+            eval_model.set_test_criteria(crit)
 
         for num_iterations in admm_iterations:
             print(f"\n=== Evaluating {num_iterations} Iterations ===")
-            if model is not None and num_iterations <= max_learned_admm_iterations:
-                # Evaluate DNN model if given
-                model.set_num_test_iterations(num_iterations)
-                model_test_loss = evaluate_dnn_model(model, generic_test_dataset)
-                model_name = model._get_name()
-                res[f"{model_name}_{num_iterations}"] = model_test_loss
+            for eval_model in eval_models:
+                if num_iterations <= eval_model.get_max_iterations():
+                    # Evaluate DNN models if given
+                    eval_model.set_num_test_iterations(num_iterations)
+                    model_test_loss = evaluate_dnn_model(eval_model, generic_test_dataset)
+                    model_name = eval_model._get_name()
+                    res[f"{model_name}_{eval_model.get_max_iterations()}_{num_iterations}"] = model_test_loss
 
             # Evaluate classical methods:
             cov_recon_params['max_iter'] = num_iterations

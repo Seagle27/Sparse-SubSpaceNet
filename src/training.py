@@ -152,26 +152,6 @@ class TrainingParams(object):
         self.model = model_gen.model.to(device)
         return self
 
-    def load_model(self, loading_path: Path):
-        """
-        Loads a pre-trained model.
-
-        Args
-        ----
-        - loading_path (Path): The path to the pre-trained model.
-
-        Returns
-        -------
-        self
-        """
-        # Load model from given path
-        try:
-            self.model.load_state_dict(torch.load(loading_path, map_location=device), strict=False)
-        except FileNotFoundError as e:
-            print(e)
-            print(f"\nTrainingParams.load_model: Model not found in {loading_path}")
-        return self
-
     def set_optimizer(self, optimizer: str, learning_rate: float, weight_decay: float):
         """
         Sets the optimizer for training.

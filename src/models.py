@@ -6,6 +6,9 @@ Authors: Dor Haim Shmuel, Arad Gast
 Created: 01/10/21
 Edited: 29/05/24
 """
+import torch
+import os
+from pathlib import Path
 
 # Imports
 import warnings
@@ -20,6 +23,7 @@ from src.models_pack.deep_root_music import DeepRootMUSIC
 from src.models_pack.sparse_net import SparseNet
 from src.models_pack.sparse_cov_admm_unfold import SparseCovADMMUnfold
 from src.config.simulation_config import SystemModelParams
+from src.utils import device
 
 
 # warnings.simplefilter("ignore")
@@ -142,6 +146,15 @@ class ModelGenerator(object):
 
         return self
 
+    def load_model(self, state_dict_path: str = None):
+        if state_dict_path is None:
+            state_dict_path = self.paths["saving"] / "final_models" / self.model.get_model_file_name()
+
+        state_dict = torch.load(state_dict_path, map_location=device)
+        self.model.load_state_dict(state_dict)
+        return self.model
+
+
     def __set_subspacenet(self):
         """
 
@@ -252,5 +265,35 @@ class ModelGenerator(object):
             raise ValueError(f"ModelGenerator.__verify_dcdmuisc_params:"
                              f" Tau has to be an int and smaller than T")
 
+
     def __str__(self):
         return f"{self.model.get_model_name()}"
+
+
+
+def get_model(model_name: str, params: dict, system_model: SystemModel):
+    model_config = (
+        ModelGenerator()
+        .set_model_type(model_name)
+        .set_system_model(system_model)
+        .set_model_params(params)
+        .set_model()
+    )
+    model = model_config.model
+    path = os.path.join(Path(__file__).parent.parent, "data", "weights", "final_models", model.get_model_file_name())
+    try:
+        model.load_state_dict(torch.load(path))
+    except FileNotFoundError as e:
+        print("####################################")
+        print(e)
+        print("####################################")
+        try:
+            print(f"Model {model_name} not found in final_models, trying to load from temp weights.")
+            path = os.path.join(Path(__file__).parent.parent, "data", "weights", model.get_model_file_name())
+            model.load_state_dict(torch.load(path))
+        except FileNotFoundError as e:
+            print("####################################")
+            print(e)
+            print("####################################")
+            warnings.warn(f"get_model: Model {model_name} not found")
+    return model.to(device)
