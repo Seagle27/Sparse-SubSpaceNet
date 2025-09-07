@@ -416,8 +416,10 @@ class MUSIC(SubspaceMethod):
         plt.figure()
         plt.plot(x, y.T, label="Music Spectrum")
         if highlight_corrdinates is not None:
-            for idx, dot in enumerate(highlight_corrdinates):
-                plt.vlines(dot, np.min(y), np.max(y), colors='r', linestyles='dashed', label=f"Ground Truth")
+            gt_cordinates = np.rad2deg(highlight_corrdinates[batch].detach().cpu().numpy())
+            for idx, dot in enumerate(gt_cordinates):
+                lbl = "Ground Truth" if idx == 0 else "_nolegend_"
+                plt.vlines(dot, np.min(y), np.max(y), colors='r', linestyles='dashed', label=lbl)
         plt.title("MUSIC SPECTRUM")
         plt.grid()
         plt.ylabel("Spectrum power")
