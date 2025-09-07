@@ -12,11 +12,11 @@ class ESPRIT(SubspaceMethod):
     def __init__(self, system_model: SystemModel, model_order_estimation:str = 'sorte'):
         super().__init__(system_model, model_order_estimation)
 
-    def forward(self, cov: torch.Tensor, sources_num: torch.tensor) -> tuple[Tensor, Tensor, Tensor]:
+    def forward(self, cov: torch.Tensor, number_of_sources: torch.tensor) -> tuple[Tensor, Tensor, Tensor]:
         # get the signal subspace
         signal_subspace, _, sources_estimation, regularization = self.subspace_separation(
             cov,
-            number_of_sources=sources_num
+            number_of_sources=number_of_sources
         )
         # create 2 overlapping matrices
         upper = signal_subspace[:, :-1]

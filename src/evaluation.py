@@ -36,7 +36,7 @@ def get_model_based_method(method_name: str, system_model: SystemModel):
     -------
     an instance of the method.
     """
-    if method_name.lower().endswith("music_1d"):
+    if method_name.lower().endswith("music"):
         return MUSIC(system_model=system_model, estimation_parameter="angle")
     if method_name.lower().endswith("2d-music"):
         return MUSIC(system_model=system_model, estimation_parameter="angle, range")
@@ -264,9 +264,10 @@ def evaluate_model_based(
             sources_num = sources_num[0]
 
             cov = cov_recon(x)
-            angles_prediction, source_estimation, _ = model_based(cov, sources_num=sources_num)
+            angles_prediction, source_estimation, _ = model_based(cov, number_of_sources=sources_num)
             overall_loss += criterion(angles_prediction, angles).item()
-            overall_acc += torch.sum(source_estimation == sources_num * torch.ones_like(source_estimation).float()).item()
+            if source_estimation is not None:
+                overall_acc += torch.sum(source_estimation == sources_num * torch.ones_like(source_estimation).float()).item()
 
             if data[0].dim() == 2:
                 test_length += 1

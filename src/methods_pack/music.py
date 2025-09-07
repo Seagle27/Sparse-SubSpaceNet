@@ -180,11 +180,18 @@ class MUSIC(SubspaceMethod):
             raise ValueError(f"MUSIC.set_search_grid: Unrecognized field type: {self.system_model.params.field_type}")
 
     def __set_search_grid_far_field(self):
-        array = torch.Tensor(self.system_model.array[:, None]).to(torch.float64).to(device)
+        if self.system_model.is_sparse_array:
+            # TODO: Support both virtual array ula segment, and the entire virtual array
+            max_element = self.system_model.array.max()
+            array = torch.arange(max_element + 1, dtype=torch.float64)[:, None].to(device)
+            array_size = max_element + 1
+        else:
+            array = torch.Tensor(self.system_model.array[:, None]).to(torch.float64).to(device)
+            array_size = self.system_model.params.N
         theta = self.angels[:, None]
         time_delay = torch.einsum("nm, na -> na",
                                   array,
-                                  torch.sin(theta).repeat(1, self.system_model.params.N).T
+                                  torch.sin(theta).repeat(1, array_size).T
                                   * self.system_model.dist_array_elems["NarrowBand"])
         self.search_grid = torch.exp(-2 * 1j * torch.pi * time_delay)
 
@@ -358,7 +365,8 @@ class MUSIC(SubspaceMethod):
     def __define_grid_params(self):
         if self.system_model.params.field_type.startswith("Far"):
             # if it's the Far field case, need to init angles range.
-            self.angels = torch.arange(-1 * torch.pi / 3, torch.pi / 3, torch.pi / 1440, device=device,
+            doa_range = np.deg2rad(self.system_model.params.doa_range)
+            self.angels = torch.arange(doa_range[0], doa_range[1], torch.pi / 1440, device=device,
                                        dtype=torch.float64).requires_grad_(True).to(torch.float64)
         elif self.system_model.params.field_type.startswith("Near"):
             # if it's the Near field, there are 3 possabilities.
