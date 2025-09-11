@@ -271,7 +271,7 @@ class Samples(SystemModel):
             Exception: If the signal nature is not defined.
         """
         M = source_number
-        amplitude = 10 ** (resolve_param(self.params.snr) / 10)
+        amplitude = 10 ** (resolve_param(self.params.snr) / 20)
         # NarrowBand signal creation
         if self.params.signal_type == "NarrowBand":
             if self.params.signal_nature == "non-coherent":
