@@ -444,7 +444,7 @@ def evaluate(
                         algorithm += "(SPS)"
                     print(f"{algorithm} evaluation time: {time.time() - start}")
                     res[algorithm] = loss
-    results['crb_sncr'] = evaluate_crb(generic_test_dataset, system_model)
+    results[criterions[0].__class__.__name__]['crb_sncr'] = evaluate_crb(generic_test_dataset, system_model)
 
     for crit_name, method_dict in results.items():
         print(f"\n=== Results for {crit_name} ===")
