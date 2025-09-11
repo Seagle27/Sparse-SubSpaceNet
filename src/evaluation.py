@@ -308,7 +308,7 @@ def evaluate_crb(dataset: DataLoader,
                  system_model: SystemModel):
     params = system_model.params
     if system_model.is_sparse_array and params.field_type.lower() == "far":
-        crb_sum = 0.0
+        crb_sum_1 = 0.0
         test_length = 0
         for i, data in enumerate(dataset):
             x, sources_num, angles = data
@@ -317,24 +317,22 @@ def evaluate_crb(dataset: DataLoader,
             validate_constant_sources_number(sources_num)
             array_pos = torch.from_numpy(system_model.array).to(device=device, dtype=torch.long)
 
-            crb_rmse_rad = crb.calculate_sncr_crb_batched(
-                S_positions=array_pos,
-                thetas_deg=torch.rad2deg(angles),  # (B, K)
+            crb_sncr_exact = crb.calculate_sncr_crb(
+                sparse_array=array_pos,
+                thetas_rad=angles,  # (B, K)
                 snr_db=params.snr,
                 L_snapshots=params.T,
-                d=0.5,
-                sigma2=1.0,
-                return_per_angle=False,  # we want (B,) RMSE lower bound
+                return_per_angle=False
             )
             if data[0].dim() == 2:
                 test_length += 1
             else:
                 test_length += data[0].shape[0]
 
-            crb_sum += torch.sum(crb_rmse_rad)
+            crb_sum_1 += torch.sum(crb_sncr_exact)
 
-        overall_rmse_bound = crb_sum / test_length
-        return normalize_result(overall_rmse_bound)
+        crb1 = crb_sum_1 / test_length
+        return normalize_result(crb1)
 
     else:
         print("CRB for this scenario isn't supported yet")
@@ -446,7 +444,7 @@ def evaluate(
                         algorithm += "(SPS)"
                     print(f"{algorithm} evaluation time: {time.time() - start}")
                     res[algorithm] = loss
-    # results['crb'] = evaluate_crb(generic_test_dataset, system_model)
+    results['crb_sncr'] = evaluate_crb(generic_test_dataset, system_model)
 
     for crit_name, method_dict in results.items():
         print(f"\n=== Results for {crit_name} ===")

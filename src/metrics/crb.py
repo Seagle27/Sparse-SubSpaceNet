@@ -1,163 +1,198 @@
 import math
 import torch
-from src.utils import build_phi  # your existing Φ(S) builder
 
-def _vecF_col_major_4d_to_2d(outer_BUUK: torch.Tensor) -> torch.Tensor:
+def _vecF_4d_to_2d(x: torch.Tensor) -> torch.Tensor:
     """
-    Convert a batch of UxU matrices (last two dims) into column-major vecs.
-    Input : (B, U, U, K)
-    Output: (B, U*U, K)
-    vec_Fcol(M) = vec_column_major(M) = vec((M^T)^T) -> implemented as transpose before reshape.
+    Column-major vectorization on the last two dims:
+      x: (B, U, U, K) -> (B, U*U, K)
+    We transpose the U-dims then row-major reshape, which equals Fortran vec.
     """
-    B, U, _, K = outer_BUUK.shape
-    return outer_BUUK.transpose(1, 2).reshape(B, U * U, K)
+    B, U, U2, K = x.shape
+    assert U == U2, "expected (B,U,U,K)"
+    return x.transpose(1, 2).reshape(B, U * U, K)
 
-def _unvecF_col_major_2d_to_4d(J_BU2P: torch.Tensor, U: int) -> torch.Tensor:
+
+def _broadcast_theta_snr_L(thetas_rad, snr_db, L, device):
     """
-    Inverse of column-major vec, for a batch of vectors stacked along the last dim.
-    Input : (B, U*U, P)
-    Output: (B, P, U, U)
+    Make thetas -> (B,K), snr_db -> (B,K), L -> (B,)
+    Accepts scalars, (K,), (B,), or (B,K).
     """
-    B, _, P = J_BU2P.shape
-    tmp = J_BU2P.transpose(1, 2).reshape(B, P, U, U)   # this equals M^T
-    return tmp.transpose(-1, -2)                       # back to M
+    thetas = torch.as_tensor(thetas_rad, dtype=torch.float64, device=device)
+    if thetas.dim() == 1:
+        thetas = thetas.unsqueeze(0)
+    B_theta, K = thetas.shape
 
-def calculate_sncr_crb_batched(
-    S_positions: torch.Tensor,
-    thetas_deg: torch.Tensor,      # (B, K) or (K,)
-    snr_db: float | torch.Tensor,  # scalar or (B,) or (B,K)
-    L_snapshots: int | float | torch.Tensor,  # scalar or (B,)
-    d: float = 0.5,
-    sigma2: float = 1.0,
-    return_per_angle: bool = True,  # if False -> returns per-sample RMSE lower bound (rad)
-    dtype_complex: torch.dtype = torch.complex128,
-) -> torch.Tensor:
-    """
-    Batched SNCR stochastic CRB (proper complex Gaussian).
-    Returns:
-      - if return_per_angle=True : (B, K) per-angle variances in rad^2
-      - else                     : (B,)   RMSE lower bound per sample (rad), i.e. sqrt(mean diag)
-    """
-    device = S_positions.device if isinstance(S_positions, torch.Tensor) else (
-        "cuda" if torch.cuda.is_available() else "cpu"
-    )
-    S = S_positions.to(device=device, dtype=torch.long)
+    snr = torch.as_tensor(snr_db, dtype=torch.float64, device=device)
+    if   snr.dim() == 0:
+        B_snr = 1
+    elif snr.dim() == 1:
+        B_snr = snr.shape[0]
+    elif snr.dim() == 2:
+        B_snr = snr.shape[0]
+        if snr.shape[1] != K:
+            raise ValueError(f"snr_db has K={snr.shape[1]} but thetas has K={K}")
+    else:
+        raise ValueError("snr_db must be scalar, (B,), or (B,K)")
 
-    thetas_deg = torch.as_tensor(thetas_deg, dtype=torch.float64, device=device)
-    if thetas_deg.dim() == 1:
-        thetas_deg = thetas_deg.unsqueeze(0)  # (1, K)
-    B, K = thetas_deg.shape
+    L_t = torch.as_tensor(L, dtype=torch.float64, device=device)
+    if   L_t.dim() == 0: B_L = 1
+    elif L_t.dim() == 1: B_L = L_t.shape[0]
+    else: raise ValueError("L_snapshots must be scalar or (B,)")
 
-    # Φ from your sparse array → determines U
-    Phi = build_phi(S).to(device)                         # (|S|, U), real
-    S_count, U = Phi.shape
-    U_pos = torch.arange(0, U, dtype=torch.float64, device=device)
+    B = int(max(B_theta, B_snr, B_L))
 
-    # Phase-only steering on the filled grid
-    phase_scale = 2.0 * math.pi * d                       # matches exp(-j 2π d * u * sinθ)
-    th = torch.deg2rad(thetas_deg)                        # (B, K)
-    sin_th = torch.sin(th)                                # (B, K)
-    cos_th = torch.cos(th)                                # (B, K)
+    # tile/broadcast
+    if B_theta == 1 and B > 1:
+        thetas = thetas.expand(B, K)
+    elif B_theta not in (1, B):
+        raise ValueError(f"thetas batch {B_theta} != {B}")
 
-    # A(b,u,k) = exp(-j * phase_scale * u * sin(theta_bk))
-    phase = -phase_scale * U_pos.view(1, U, 1) * sin_th.view(B, 1, K)  # (B, U, K)
-    A = torch.exp(1j * phase).to(dtype_complex)                          # (B, U, K)
+    if snr.dim() == 0:
+        snr = snr.expand(B, K)
+    elif snr.dim() == 1:
+        if B_snr == 1 and B > 1:
+            snr = snr.expand(B)
+            B_snr = B
+        if B_snr != B:
+            raise ValueError(f"snr_db batch {B_snr} != {B}")
+        snr = snr.view(B, 1).expand(B, K)
+    else:  # (B_snr, K)
+        if B_snr == 1 and B > 1:
+            snr = snr.expand(B, K)
+            B_snr = B
+        if snr.shape != (B, K):
+            raise ValueError(f"snr_db shape {tuple(snr.shape)} != ({B},{K})")
 
-    # dA/dθ(b,u,k) = (j * -phase_scale * u * cosθ_bk) * A(b,u,k)
-    coeff = (1j * -phase_scale) * U_pos.view(1, U, 1) * cos_th.view(B, 1, K)  # (B, U, K)
-    dA = (coeff.to(dtype_complex) * A)                                         # (B, U, K)
-
-    # SNR -> p(b,k). For phase-only steering, column power is 1; we compute anyway for generality.
-    # If you ever add amplitude taper on the PHYSICAL array, prefer c_k from A_S = Φ A.
-    snr_db_t = torch.as_tensor(snr_db, dtype=torch.float64, device=device)
-    if snr_db_t.dim() == 0:
-        snr_db_t = snr_db_t.expand(B, K)
-    elif snr_db_t.dim() == 1:
-        snr_db_t = snr_db_t.view(-1, 1).expand(B, K)
-    snr_lin = 10.0 ** (snr_db_t / 10.0)                                       # (B, K)
-
-    sigma2_t = torch.as_tensor(sigma2, dtype=torch.float64, device=device)
-    # Column power on the filled grid (phase-only -> ones)
-    col_power = (A.abs() ** 2).mean(dim=1).real.clamp_min(1e-12)              # (B, K)
-    p = (snr_lin * sigma2_t) / col_power                                      # (B, K), real64
-    p_c = p.to(dtype_complex)                                                 # complex for products
-
-    # ---------- Build J = [D_theta, D_p, d_sigma] (all batched, no kron) ----------
-    # D_p(:,k) = vec( a_k * a_k^H ), using column-major vec  ⇒ vec = transpose then reshape
-    outer_aa = torch.einsum('buk,bvk->buvk', A, A.conj())                     # (B, U, U, K)
-    D_p = _vecF_col_major_4d_to_2d(outer_aa)                                   # (B, U^2, K)
-
-    # D_theta(:,k) = p_k * vec( dA_k a_k^H + a_k dA_k^H )
-    outer_da_a = torch.einsum('buk,bvk->buvk', dA, A.conj())                  # (B, U, U, K)
-    outer_a_da = torch.einsum('buk,bvk->buvk', A,  dA.conj())                 # (B, U, U, K)
-    Dth_4d = (outer_da_a + outer_a_da) * p_c.view(B, 1, 1, K)                 # (B, U, U, K)
-    D_theta = _vecF_col_major_4d_to_2d(Dth_4d)                                 # (B, U^2, K)
-
-    # d_sigma = vec(I_U) shared across batch
-    d_sigma = torch.eye(U, dtype=dtype_complex, device=device)
-    d_sigma_vec = d_sigma.transpose(-2, -1).reshape(U * U)                    # (U^2,)
-    d_sigma_B = d_sigma_vec.view(1, -1, 1).expand(B, -1, 1)                   # (B, U^2, 1)
-
-    # J: (B, U^2, 2K+1)
-    J = torch.cat([D_theta, D_p, d_sigma_B], dim=2)
-
-    # ---------- Covariances ----------
-    # R_yy(b) = A(b) diag(p_b) A(b)^H + sigma2 I
-    Ap = A * p_c.view(B, 1, K)                                                # (B, U, K)
-    R_yy = Ap @ A.conj().transpose(-2, -1) + sigma2_t.to(dtype_complex) * torch.eye(U, dtype=dtype_complex, device=device)  # (B, U, U)
-
-    # R_xx(b) = Φ R_yy(b) Φ^H
-    Phi_c = Phi.to(dtype_complex)
-    # Using bmm via einsum to avoid explicit expand:
-    R_xx = torch.einsum('su, buv, tv -> bst', Phi_c, R_yy, Phi_c.conj())      # (B, S, S)
-
-    # ---------- Left/right weights via batched solves ----------
-    # Solve R_xx(b) Y_right(b) = Φ   → Y_right: (B, S, U)
-    Phi_rhs = Phi_c.expand(B, -1, -1)
-    Y_right = torch.linalg.solve(R_xx, Phi_rhs)                                # (B, S, U)
-    M_right = torch.einsum('us, b s v -> b u v', Phi_c.T, Y_right)            # (B, U, U)
-
-    # Solve R_xx(b)^T Y_left(b) = Φ   → Y_left: (B, S, U)
-    Y_left  = torch.linalg.solve(R_xx.transpose(-2, -1), Phi_rhs)              # (B, S, U)
-    M_left  = torch.einsum('us, b s v -> b u v', Phi_c.T, Y_left)             # (B, U, U)
-
-    # ---------- Apply (M_left^T ⊗ M_right) to J via vec-trick ----------
-    # X_b = unvec(J_b) → (B, P, U, U), then Y = M_right X_b M_left
-    Ptot = 2 * K + 1
-    Xb = _unvecF_col_major_2d_to_4d(J, U)                                      # (B, Ptot, U, U)
-
-    # Multiply left/right in (B*P, U, U) space to leverage fast bmm
-    Xbp = Xb.reshape(B * Ptot, U, U)
-    M_right_rep = M_right.unsqueeze(1).expand(B, Ptot, U, U).reshape(B * Ptot, U, U)
-    M_left_rep  = M_left .unsqueeze(1).expand(B, Ptot, U, U).reshape(B * Ptot, U, U)
-    Y = M_right_rep @ Xbp @ M_left_rep                                         # (B*P, U, U)
-    Y = Y.reshape(B, Ptot, U, U)
-
-    # Back to vec (column-major): (B, U^2, Ptot)
-    KJ = _vecF_col_major_4d_to_2d(Y.permute(0, 2, 3, 1))  # (B, U^2, Ptot)
-
-    # ---------- FIM and CRB ----------
-    # F = L * J^H KJ
-    L_t = torch.as_tensor(L_snapshots, dtype=torch.float64, device=device)
     if L_t.dim() == 0:
         L_t = L_t.expand(B)
-    F = torch.einsum('bpu, buq -> bpq', J.conj().transpose(-2, -1), KJ)        # (B, Ptot, Ptot)
-    F = (F + F.conj().transpose(-2, -1)) * 0.5                                 # Hermitize
-    F = F * L_t.view(B, 1, 1)
+    elif L_t.dim() == 1:
+        if L_t.shape[0] == 1 and B > 1:
+            L_t = L_t.expand(B)
+        if L_t.shape[0] != B:
+            raise ValueError(f"L length {L_t.shape[0]} != B={B}")
 
-    # Invert batch
-    try:
-        CRB = torch.linalg.inv(F)
-    except RuntimeError:
-        CRB = torch.linalg.pinv(F, rcond=1e-12)
+    return thetas, snr, L_t  # (B,K), (B,K), (B,)
 
-    # θ-block diag → per-angle variances (B, K)
-    CRB_theta = CRB[:, :K, :K].real
-    per_angle_var = torch.diagonal(CRB_theta, dim1=-2, dim2=-1).clamp_min(0.0) # (B, K)
+
+def calculate_sncr_crb(
+    sparse_array: torch.LongTensor,
+    thetas_rad: torch.Tensor,      # (B,K) or (K,)   -- radians
+    snr_db: float | torch.Tensor,  # scalar or (B,) or (B,K)   -- per-source SNR in dB
+    L_snapshots: int | float | torch.Tensor,
+    d: float = 0.5,
+    sigma2: float = 1.0,
+    return_per_angle: bool = True,
+):
+    """
+    SNCR-CRB computed *exactly as in the paper* (Eq. 33):
+
+      F = L * [vec(∂Ryy/∂β)]^H * ( S^T ⊗ S ) * [vec(∂Ryy/∂β)]
+      S = Φ^T ( Φ Ryy Φ^H )^{-1} Φ,   Ryy = A diag(p) A^H + σ^2 I
+
+    β = [θ_1..θ_K, P_1..P_K, σ^2]^T, with θ in radians.
+    Returns per-angle variances (rad^2) or RMSE (rad).
+
+    Notes:
+      * All large Kroneckers are formed explicitly, as in the paper.
+      * Inversion of (Φ Ryy Φ^H) is done via Cholesky solve (numerically stable but exact inverse).
+      * dtype is hard-coded to complex128, real parts are kept where theory dictates.
+    """
+    device = sparse_array.device if isinstance(sparse_array, torch.Tensor) else (
+        "cuda" if torch.cuda.is_available() else "cpu"
+    )
+    dtype_c = torch.complex128
+    Sidx = torch.as_tensor(sparse_array, dtype=torch.long, device=device)
+    M = Sidx.numel()
+    U = int(Sidx.max().item() + 1)  # presumed contiguous ULA grid 0..max(S)
+
+    # Φ selection (M x U)
+    Phi = torch.zeros(M, U, dtype=torch.float64, device=device)
+    Phi[torch.arange(M, device=device), Sidx] = 1.0
+    Phi_c = Phi.to(dtype_c)
+
+    # --- broadcast inputs ---
+    thetas, snr_db_t, L_t = _broadcast_theta_snr_L(thetas_rad, snr_db, L_snapshots, device)
+    B, K = thetas.shape
+
+    # --- ULA steering and derivatives on U sensors ---
+    u = torch.arange(U, dtype=torch.float64, device=device)  # 0..U-1
+    phase_const = 2.0 * math.pi * d
+    sin_t = torch.sin(thetas)          # (B,K)
+    cos_t = torch.cos(thetas)
+
+    phase = -phase_const * u.view(1, U, 1) * sin_t.view(B, 1, K)  # (B,U,K)
+    A = torch.exp(1j * phase).to(dtype_c)                         # (B,U,K)
+    dA = ((-1j * phase_const) * u.view(1, U, 1) * cos_t.view(B, 1, K)).to(dtype_c) * A
+
+    # --- stochastic powers from SNR: p_k = (SNR_lin)*σ^2  (|a|=1 so no taper correction)
+    snr_lin = 10.0 ** (snr_db_t / 10.0)         # (B,K)
+    p = (snr_lin * float(sigma2)).to(torch.float64)  # (B,K)
+    p_c = p.to(dtype_c)
+
+    # --- virtual covariance Ryy and measured Rxx ---
+    Ap = A * p_c.view(B, 1, K)
+    Iu = torch.eye(U, dtype=dtype_c, device=device)
+    Ryy = Ap @ A.conj().transpose(-2, -1) + float(sigma2) * Iu              # (B,U,U)
+    Rxx = torch.einsum('mu, buv, nv -> bmn', Phi_c, Ryy, Phi_c.conj())      # (B,M,M)
+
+    # --- S = Φ^T (Φ Ryy Φ^H)^{-1} Φ  via Cholesky solve (exact inverse, numerically stable) ---
+    S_list = []
+    for b in range(B):
+        Lc = torch.linalg.cholesky(Rxx[b])                # Rxx = L L^H
+        Rinv = torch.cholesky_inverse(Lc)                 # (ΦRyyΦ^H)^{-1}
+        S_b = Phi_c.T @ Rinv @ Phi_c                      # (U×U)
+        S_list.append(S_b)
+    S_eff = torch.stack(S_list, dim=0).contiguous()       # (B,U,U)
+
+    # --- Jacobian in ULA domain: J_y = [ D_theta | D_p | d_sigma ]  (size U^2 × (2K+1)) ---
+    outer_aa   = torch.einsum('buk,bvk->buvk', A,  A.conj())    # (B,U,U,K)
+    outer_da_a = torch.einsum('buk,bvk->buvk', dA, A.conj())
+    outer_a_da = torch.einsum('buk,bvk->buvk', A,  dA.conj())
+
+    D_theta4d = (outer_da_a + outer_a_da) * p_c.view(B, 1, 1, K)  # (B,U,U,K)
+    D_p4      = outer_aa                                          # (B,U,U,K)
+    d_sigma4  = Iu.view(1, U, U, 1).expand(B, U, U, 1)            # (B,U,U,1)
+
+    D_theta = _vecF_4d_to_2d(D_theta4d)   # (B,U^2,K)
+    D_p     = _vecF_4d_to_2d(D_p4)        # (B,U^2,K)
+    d_sigma = _vecF_4d_to_2d(d_sigma4)    # (B,U^2,1)
+
+    J_y = torch.cat([D_theta, D_p, d_sigma], dim=2).to(dtype_c)   # (B,U^2, 2K+1)
+    P_tot = 2 * K + 1
+
+    # --- Build Kron(S^T, S) and assemble F exactly as Eq. (33) ---
+    F_list = []
+    for b in range(B):
+        S_b = S_eff[b]
+        # (S^T ⊗ S)  -- use plain transpose (no conjugation) to match the equation
+        S_kron = torch.kron(S_b.transpose(-2, -1).contiguous(), S_b.contiguous())  # (U^2, U^2)
+        Jy = J_y[b]                                     # (U^2, P_tot)
+        F_b = (Jy.conj().transpose(0, 1) @ (S_kron @ Jy)).real  # (P_tot, P_tot), real Hermitian
+        # Symmetrize numerically and scale by L
+        F_b = 0.5 * (F_b + F_b.transpose(0, 1))
+        F_b = L_t[b].item() * F_b
+        F_list.append(F_b)
+    F = torch.stack(F_list, dim=0)                      # (B, P_tot, P_tot), real
+
+    # --- Invert F exactly (no floors); fallback to pinv if singular ---
+    CRB_list = []
+    eye_cache = torch.eye(P_tot, dtype=torch.float64, device=device)
+    for b in range(B):
+        Fb = F[b]
+        try:
+            CRB_b = torch.linalg.solve(Fb, eye_cache)  # exact inverse if nonsingular
+        except torch.linalg.LinAlgError:
+            print("Matrix is singular, fall back to Moore–Penrose")
+            CRB_b = torch.linalg.pinv(Fb)              # Moore–Penrose if needed
+        CRB_list.append(CRB_b)
+    CRB = torch.stack(CRB_list, dim=0)                 # (B, P_tot, P_tot)
+
+    # θ-block variances
+    CRB_theta = CRB[:, :K, :K]
+    per_angle_var = torch.diagonal(CRB_theta, dim1=-2, dim2=-1).clamp_min(0.0)  # (B,K)
 
     if return_per_angle:
-        return per_angle_var  # (B, K) in rad^2
+        return per_angle_var  # rad^2
+    # RMSE in radians (as in the paper’s definition, averaged over sources)
+    return torch.sqrt(per_angle_var.mean(dim=1))
 
-    # Else, per-sample RMSE lower bound (rad): sqrt(mean_k variance_k)
-    rmse_lb = torch.sqrt(per_angle_var.mean(dim=1))                             # (B,)
-    return rmse_lb

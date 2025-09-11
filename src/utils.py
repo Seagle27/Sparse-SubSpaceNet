@@ -452,9 +452,9 @@ class SpectralNormalization(nn.Module):
 # ─────────────────── helper: build Φ (|S|×|U|) ──────────────────
 def build_phi(array) -> Tensor:
     max_element = array.max()
-    s = torch.tensor(array, dtype=torch.int64)
-    v = torch.arange(max_element + 1, dtype=torch.int64)   # The presumed ULA
-    phi = torch.zeros(s.numel(), v.numel())
+    s = torch.as_tensor(array, dtype=torch.int64, device=device)
+    v = torch.arange(max_element + 1, dtype=torch.int64, device=device)   # The presumed ULA
+    phi = torch.zeros(s.numel(), v.numel(), device=device)
     for i, p in enumerate(s):
         phi[i, (v == p).nonzero(as_tuple=True)[0]] = 1.0
     return phi
