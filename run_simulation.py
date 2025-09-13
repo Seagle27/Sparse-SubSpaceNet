@@ -73,7 +73,8 @@ class SimulationRunner:
             test_dataset,
             collate_fn=collate_fn,
             batch_sampler=SameLengthBatchSampler(test_dataset, batch_size=128),
-            shuffle=False
+            shuffle=False,
+            pin_memory=True,
         )
 
         criterions = set_criterions(
@@ -94,7 +95,47 @@ class SimulationRunner:
             admm_iterations=config.evaluation.admm_iterations
         )
 
-    def _run_single_simulation(self):
+    def get_dataset(self, create_data, samples_model):
+        config = self.config
+        train_dataset = None
+        test_dataset = None
+
+        if create_data:
+            print("creating dataset...")
+            if config.commands.train_model:
+                train_dataset = create_dataset(
+                    samples_model, config.training.samples_size, config.commands.save_dataset,
+                    self.paths["datasets"], config.training.true_doa_train,
+                    config.training.true_range_train, phase="train"
+                )
+
+            if config.commands.evaluate_mode:
+                test_dataset = create_dataset(
+                    samples_model, int(config.training.train_test_ratio * config.training.samples_size),
+                    config.commands.save_dataset,
+                    self.paths["datasets"], config.training.true_doa_test,
+                    config.training.true_range_test, phase="test"
+                )
+        else:
+            print("Loading dataset...")
+            if config.commands.train_model:
+                train_dataset = load_datasets(
+                    config.system_model,
+                    config.training.samples_size,
+                    self.paths["datasets"],
+                    is_training=True
+                )
+
+            if config.commands.evaluate_mode:
+                test_dataset = load_datasets(
+                    config.system_model,
+                    int(config.training.train_test_ratio * config.training.samples_size),
+                    self.paths["datasets"],
+                    is_training=False
+                )
+        return train_dataset, test_dataset
+
+    def _run_single_simulation(self, create_dataset):
         config = self.config
 
         # Redirect stdout to file if enabled
@@ -119,51 +160,16 @@ class SimulationRunner:
             .set_model()
         )
         samples_model = Samples(config.system_model, config.system_model.antenna_pattern)
-
-        train_dataset = None
-        test_dataset = None
-
-        if config.commands.create_data:
-            if config.commands.train_model:
-                train_dataset = create_dataset(
-                    samples_model, config.training.samples_size, config.commands.save_dataset,
-                    self.paths["datasets"], config.training.true_doa_train,
-                    config.training.true_range_train, phase="train"
-                )
-
-            if config.commands.evaluate_mode:
-                test_dataset = create_dataset(
-                    samples_model, int(config.training.train_test_ratio * config.training.samples_size), config.commands.save_dataset,
-                    self.paths["datasets"], config.training.true_doa_test,
-                    config.training.true_range_test, phase="test"
-                )
-        else:
-            try:
-                if config.commands.train_model:
-                    train_dataset = load_datasets(
-                        config.system_model,
-                        config.training.samples_size,
-                        self.paths["datasets"],
-                        is_training=True
-                    )
-                if config.commands.evaluate_mode:
-                    test_dataset = load_datasets(
-                        config.system_model,
-                        int(config.training.train_test_ratio * config.training.samples_size),
-                        self.paths["datasets"],
-                        is_training=False
-                    )
-            except Exception as e:
-                print("Fallback to data creation due to error:", e)
-                config.commands.create_data = True
-                return self._run_single_simulation()
+        train_dataset, test_dataset = self.get_dataset(create_dataset, samples_model)
 
         model = None
         if config.commands.train_model:
+            train_dataset.materialize(config.system_model)
             model = self.train_model(model_gen, train_dataset)
 
         result = None
         if config.commands.evaluate_mode:
+            test_dataset.materialize(config.system_model)
             result = self.evaluate_model(model, system_model, test_dataset)
 
         if config.commands.save_to_file:
@@ -175,19 +181,21 @@ class SimulationRunner:
         return result
 
     def run(self):
+        create_data = self.config.commands.create_data
         if not self.config.scenario:
-            return self._run_single_simulation()
+            return self._run_single_simulation(create_data)
 
         loss_dict = {}
         for key, values in self.config.scenario.items():
+            if key == 'eta':
+                create_data = True
             loss_dict[key] = {}
             for val in values:
                 setattr(self.config.system_model, key, val)
                 loss, successful_simulations = {}, 0
                 for i in range(self.monte_carlo_simulations):
-                    
                     print(f"Running scenario: {key} = {val}, simulation step = {i}")
-                    result = self._run_single_simulation()
+                    result = self._run_single_simulation(create_data)
                     if result is not None:
                         successful_simulations += 1
                         if not loss:
@@ -197,6 +205,8 @@ class SimulationRunner:
                                 for test in result[k].keys():
                                     for res_type in result[k][test].keys():
                                         loss[k][test][res_type] += result[k][test][res_type]
+                    if create_data and self.config.commands.save_dataset and key != 'eta':
+                        create_data = False
                 for k in loss.keys():  # Iterate over loss functions
                     for test in loss[k].keys():
                         for res_type in loss[k][test].keys():

@@ -36,6 +36,8 @@ from datetime import datetime
 from tqdm import tqdm
 from torch.optim import lr_scheduler
 from sklearn.model_selection import train_test_split
+import math
+
 # internal imports
 from src.metrics.criterions import *
 from src.system_model import SystemModelParams
@@ -231,33 +233,6 @@ class TrainingParams(object):
         self.gamma = gamma
         return self
 
-    # def set_criterion(self, criterion: str, balance_factor: float = None):
-    #     """
-    #     Sets the loss criterion for training.
-    #
-    #     Returns
-    #     -------
-    #     self
-    #     """
-    #     criterion = criterion.lower()
-    #     # Define loss criterion
-    #     if criterion.startswith("bce"):
-    #         self.criterion = nn.BCELoss()
-    #     elif criterion.startswith("mse"):
-    #         self.criterion = nn.MSELoss()
-    #     elif criterion.startswith("mspe"):
-    #         self.criterion = MSPELoss()
-    #     elif criterion.startswith("rmspe"):
-    #         self.criterion = RMSPELoss(balance_factor=balance_factor)
-    #     elif criterion.startswith("cartesian") and self.training_objective == "angle, range":
-    #         self.criterion = CartesianLoss()
-    #     elif criterion.startswith("ce") and self.training_objective == "source_estimation":
-    #         self.criterion = nn.CrossEntropyLoss(reduction="sum")
-    #     else:
-    #         raise Exception(
-    #             f"TrainingParams.set_criterion: criterion {criterion} is not defined"
-    #         )
-    #     return self
 
     def set_training_dataset(self, train_dataset: list):
         """
@@ -283,15 +258,13 @@ class TrainingParams(object):
         batch_sampler_valid = SameLengthBatchSampler(valid_dataset, batch_size=128, shuffle=False)
         # Transform datasets into DataLoader objects
         self.train_dataset = torch.utils.data.DataLoader(
-            train_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_train
+            train_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_train, pin_memory=True,
         )
         self.valid_dataset = torch.utils.data.DataLoader(
-            valid_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_valid
+            valid_dataset,collate_fn=collate_fn, batch_sampler=batch_sampler_valid, pin_memory=True,
         )
         return self
 
-
-import math, copy, torch
 
 class EarlyStopping:
     def __init__(self, mode="min", patience=10, min_delta=1e-4, restore_best=True):

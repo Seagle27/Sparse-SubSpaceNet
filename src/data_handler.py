@@ -30,6 +30,8 @@ Attributes:
 
 # Imports
 import itertools
+
+import torch
 from tqdm import tqdm
 from torch.utils.data import Dataset, Sampler
 from pathlib import Path
@@ -66,32 +68,31 @@ def create_dataset(
         tuple: A tuple containing the desired dataset comprised of (X-samples, Y-labels).
 
     """
-    time_series, labels, sources_num = [], [], []
+    clean_observations, noise_templates, labels, sources_num = [], [], [], []
 
 
-    for _ in tqdm(range(samples_size), desc="Creating Dataset"):
+    for _ in tqdm(range(samples_size), desc="Creating Base Dataset"):
         M = resolve_param(samples_model.params.M)
         # Samples model creation
         samples_model.set_doa(true_doa, M)
         if samples_model.params.field_type.lower().endswith("near"):
             samples_model.set_range(true_range, M)
         # Observations matrix creation
-        X = torch.tensor(
-            samples_model.samples_creation(
-                noise_mean=0, noise_variance=1, signal_mean=0, signal_variance=1, source_number=M
-            )[0],
-            dtype=torch.complex128,
-        )
+        clean_obs, noise_temp = samples_model.samples_creation(noise_mean=0, noise_variance=1, signal_mean=0,
+                                                                signal_variance=1, source_number=M)
+
         # Ground-truth creation
         Y = torch.tensor(samples_model.doa, dtype=torch.float32)
         if samples_model.params.field_type.lower().endswith("near"):
             Y1 = torch.tensor(samples_model.distances, dtype=torch.float32)
             Y = torch.cat((Y, Y1), dim=0)
-        time_series.append(X)
+
+        clean_observations.append(torch.tensor(clean_obs, dtype=torch.complex128))
+        noise_templates.append(torch.tensor(noise_temp, dtype=torch.complex128))
         labels.append(Y)
         sources_num.append(M)
 
-    generic_dataset = TimeSeriesDataset(time_series, labels, sources_num)
+    generic_dataset = TimeSeriesDataset(clean_observations, noise_templates, labels, sources_num)
     if save_datasets:
         generic_dataset_filename = f"Generic_DataSet" + set_dataset_filename(samples_model.params, samples_size)
         torch.save(obj=generic_dataset, f=datasets_path / phase / generic_dataset_filename)
@@ -178,7 +179,7 @@ def set_dataset_filename(system_model_params: SystemModelParams, samples_size: f
             f"_{system_model_params.field_type}_field_"
             f"{system_model_params.signal_type}_"
             + f"{system_model_params.signal_nature}_{samples_size}_M={M}_"
-            + f"N={system_model_params.N}_T={system_model_params.T}_SNR={system_model_params.snr}_"
+            + f"N={system_model_params.N}_T={system_model_params.T}_"
             + f"eta={system_model_params.eta}_sv_noise_var{system_model_params.sv_noise_var}_"
             + f"bias={system_model_params.bias}"
             + ".h5"
@@ -187,16 +188,84 @@ def set_dataset_filename(system_model_params: SystemModelParams, samples_size: f
 
 
 class TimeSeriesDataset(Dataset):
-    def __init__(self, X, Y, M):
-        self.X = X
+    def __init__(self, clean_obs, noise_temps, Y, M):
+        # Base components stored on disk
+        self.clean_obs = clean_obs
+        self.noise_temps = noise_temps
         self.Y = Y
         self.M = M
 
+        # This will hold the pre-computed samples for a specific run
+        self._materialized_X = None
+        self.params = None  # For on-the-fly generation if not materializing
+
     def __len__(self):
-        return len(self.X)
+        return len(self.clean_obs)
+
+    def materialize(self, params: SystemModelParams):
+        """
+        Pre-computes the entire dataset's noisy observations for a given set of parameters.
+        This avoids recalculating samples in __getitem__ during training epochs.
+        """
+        print(f"Materializing dataset with SNR={params.snr} and T={params.T}...")
+        self.params = params
+        self._materialized_X = []
+        # Use a temporary flag to ensure we use the on-the-fly calculation
+        for i in tqdm(range(len(self)), desc="Materializing samples"):
+            sample, _, _ = self._get_single_item_on_the_fly(i)
+            self._materialized_X.append(sample)
+
+    def clear_materialization(self):
+        """Clears the pre-computed dataset."""
+        self._materialized_X = None
+
+    def _get_single_item_on_the_fly(self, idx):
+        """The core logic for creating a single noisy sample."""
+        if not self.params:
+            raise ValueError("System model parameters are not set. Cannot create observation.")
+
+        clean_observation = self.clean_obs[idx]
+        noise_template = self.noise_temps[idx]
+
+        snr_db = resolve_param(self.params.snr)
+        num_snapshots = self.params.T
+
+        clean_observation = clean_observation[:, :num_snapshots]
+        noise_template = noise_template[:, :num_snapshots]
+
+        ## SNR at Receiver
+        # signal_power = torch.mean(torch.abs(clean_observation) ** 2)
+        # snr_linear = 10 ** (snr_db / 10)
+        # noise_variance = signal_power / snr_linear
+
+        ## Per-Source SNR
+        snr_linear = 10 ** (snr_db / 10)
+        signal_power_per_source = 1.0
+        noise_variance = signal_power_per_source / snr_linear
+        noise_variance_tensor = torch.tensor(noise_variance, dtype=torch.float64)
+        scaled_noise = noise_template * torch.sqrt(noise_variance_tensor)
+
+        final_observation = clean_observation + scaled_noise
+
+        return final_observation, self.M[idx], self.Y[idx]
 
     def __getitem__(self, idx):
-        return self.X[idx], self.M[idx], self.Y[idx]
+        # If materialized, return the pre-computed sample.
+        if self._materialized_X is not None:
+            return self._materialized_X[idx], self.M[idx], self.Y[idx]
+
+        # Calculate on the fly (e.g., for quick evaluation without materializing)
+        return self._get_single_item_on_the_fly(idx)
+
+    def set_system_model_params(self, params: SystemModelParams):
+        """Allows updating the simulation parameters for on-the-fly generation."""
+        self.params = params
+
+    def get_metadata(self, idx):
+        """
+        Returns the metadata for a sample without triggering observation creation.
+        """
+        return self.M[idx], self.Y[idx]
 
 
 def collate_fn(batch):
@@ -246,10 +315,12 @@ class SameLengthBatchSampler(Sampler):
 
     def _create_batches(self):
         length_to_indices = {}
-        for idx, (_, source_num, _) in enumerate(self.data_source):
+        for idx in range(len(self.data_source)):
+            source_num, _ = self.data_source.get_metadata(idx)
             if source_num not in length_to_indices:
                 length_to_indices[source_num] = []
             length_to_indices[source_num].append(idx)
+
         # check that there is not bais in the labels
         max_length = 0
         min_length = np.inf

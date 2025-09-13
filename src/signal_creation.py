@@ -180,13 +180,13 @@ class Samples(SystemModel):
                     A = self.antenna_pattern_steering_vec(self.doa, self.antenna_pattern_data).T
                 else:
                     A = np.array([self.steering_vec(theta) for theta in self.doa]).T
-                samples = (A @ signal) + noise
+                clear_obs = A @ signal
             elif self.params.field_type.startswith("Near"):
                 A = self.steering_vec(theta=self.doa, distance=self.distances, nominal=False, generate_search_grid=False)
-                samples = (A @ signal) + noise
+                clear_obs = A @ signal
             else:
                 raise Exception(f"Samples.params.field_type: Field type {self.params.field_type} is not defined")
-            return samples, signal, A, noise
+            return clear_obs, noise
         # Generate Broadband samples
         elif self.params.signal_type.startswith("Broadband"):
             samples = []
@@ -271,14 +271,13 @@ class Samples(SystemModel):
             Exception: If the signal nature is not defined.
         """
         M = source_number
-        amplitude = 10 ** (resolve_param(self.params.snr) / 20)
+        # amplitude = 10 ** (resolve_param(self.params.snr) / 20)
         # NarrowBand signal creation
         if self.params.signal_type == "NarrowBand":
             if self.params.signal_nature == "non-coherent":
                 # create M non-coherent signals
                 return (
-                    amplitude
-                    * (np.sqrt(2) / 2)
+                    (np.sqrt(2) / 2)
                     * np.sqrt(signal_variance)
                     * (
                         np.random.randn(M, self.params.T)
@@ -290,8 +289,7 @@ class Samples(SystemModel):
             elif self.params.signal_nature == "coherent":
                 # Coherent signals: same amplitude and phase for all signals
                 sig = (
-                    amplitude
-                    * (np.sqrt(2) / 2)
+                    (np.sqrt(2) / 2)
                     * np.sqrt(signal_variance)
                     * (
                         np.random.randn(1, self.params.T)
@@ -314,8 +312,7 @@ class Samples(SystemModel):
                 for i in range(M):
                     for j in range(num_sub_carriers):
                         sig_amp = (
-                            amplitude
-                            * (np.sqrt(2) / 2)
+                            (np.sqrt(2) / 2)
                             * (np.random.randn(1) + 1j * np.random.randn(1))
                         )
                         signal[i] += sig_amp * np.exp(
@@ -336,8 +333,7 @@ class Samples(SystemModel):
                 ) + 1j * np.zeros((1, len(self.time_axis["Broadband"])))
                 for j in range(num_sub_carriers):
                     sig_amp = (
-                        amplitude
-                        * (np.sqrt(2) / 2)
+                        (np.sqrt(2) / 2)
                         * (np.random.randn(1) + 1j * np.random.randn(1))
                     )
                     signal += sig_amp * np.exp(
