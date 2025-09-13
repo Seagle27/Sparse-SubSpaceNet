@@ -182,8 +182,8 @@ def calculate_sncr_crb(
         try:
             CRB_b = torch.linalg.solve(Fb, eye_cache)  # exact inverse if nonsingular
         except torch.linalg.LinAlgError:
-            print("Matrix is singular, fall back to Moore–Penrose")
-            CRB_b = torch.linalg.pinv(Fb)              # Moore–Penrose if needed
+            raise Exception("FIM is singular")
+            # CRB_b = torch.linalg.pinv(Fb)              # Moore–Penrose if needed
         CRB_list.append(CRB_b)
     CRB = torch.stack(CRB_list, dim=0)                 # (B, P_tot, P_tot)
 

@@ -494,7 +494,7 @@ def diag_loading(mat: Tensor, training=False) -> Tensor:
     B, N, _ = mat.shape
     I = torch.eye(N, device=mat.device, dtype=mat.dtype).expand(B, N, N)
 
-    eps = 1e-8   # loading
+    eps = 1e-6   # loading
     sigma = 1e-6 if training else 0.0  # tiny training-only dither
     E = hermitian_proj(torch.randn_like(mat))
     return mat + eps*I + sigma*E

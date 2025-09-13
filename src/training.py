@@ -455,7 +455,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
     clip_count = 0
     step_count = 0
-    early = EarlyStopping(mode="min", patience=15, min_delta=1e-4, restore_best=True)
+    # early = EarlyStopping(mode="min", patience=15, min_delta=1e-4, restore_best=True)
 
     # Initialize tqdm once for the entire training process
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
@@ -488,14 +488,14 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 try:
                     loss.backward()  # retain_graph=True
-                    total_norm = torch.norm(
-                        torch.stack([p.grad.detach().norm(2) for p in model.parameters() if p.grad is not None]),
-                        2
-                    ).item()
+                    # total_norm = torch.norm(
+                    #     torch.stack([p.grad.detach().norm(2) for p in model.parameters() if p.grad is not None]),
+                    #     2
+                    # ).item()
 
-                    if total_norm > max_norm:
-                        clip_count += 1
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
+                    # if total_norm > max_norm:
+                    #     clip_count += 1
+                    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 except RuntimeError as r:
                     print(f"linalg error: \n{r}")
 
@@ -556,9 +556,9 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                 best_model_wts = copy.deepcopy(model.state_dict())
                 torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
 
-            if early.step(valid_loss.get("loss"), model):
-                print("Early Stopping, plateau reached, epoch:", epoch)
-                break
+            # if early.step(valid_loss.get("loss"), model):
+            #     print("Early Stopping, plateau reached, epoch:", epoch)
+            #     break
 
     # Training complete
     time_elapsed = time.time() - since
@@ -571,8 +571,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
     res = {"model": model, "loss_train_list": loss_train_list, "loss_valid_list": loss_valid_list,
            "reg_loss_train_list": reg_loss_train_list}
-    print(f"Clipping occurred in {clip_count} out of {step_count} steps "
-          f"({100.0 * clip_count / step_count:.2f}% of the time).")
+    # print(f"Clipping occurred in {clip_count} out of {step_count} steps "
+    #       f"({100.0 * clip_count / step_count:.2f}% of the time).")
     if len(acc_train_list) > 0 and len(acc_valid_list) > 0:
         res["acc_train_list"] = acc_train_list
         res["acc_valid_list"] = acc_valid_list
