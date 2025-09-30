@@ -415,15 +415,15 @@ def evaluate(
                 model_name = model_tmp._get_name()
                 res[model_name] = model_test_loss
             # Evaluate DNN models
-            # for model_name, params in models.items():
-            #     model = get_model(model_name, params, system_model)
-            #     # num_of_params = sum(p.numel() for p in model.parameters())
-            #     # total_size = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
-            #     # print(f"Number of parameters in {model_name}: {num_of_params} with total size: {total_size} bytes")
+            for model_name, params in models.items():
+                model = get_model(model_name, params, system_model)
+                num_of_params = sum(p.numel() for p in model.parameters())
+                total_size = sum(p.numel() * p.element_size() for p in model.parameters() if p.requires_grad)
+                print(f"Number of parameters in {model_name}: {num_of_params} with total size: {total_size} bytes")
             #     start = time.time()
-            #     model_test_loss = evaluate_dnn_model(model, generic_test_dataset)
+                model_test_loss = evaluate_dnn_model(model, generic_test_dataset)
             #     print(f"{model_name} evaluation time: {time.time() - start}")
-            #     res[model_name] = model_test_loss
+                res[model_name] = model_test_loss
 
             # Evaluate classical subspace methods
             cov_recon = get_cov_reconstruction_method(cov_recon_method, system_model, **cov_recon_params)

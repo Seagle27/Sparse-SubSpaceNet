@@ -33,7 +33,7 @@ import itertools
 
 import torch
 from tqdm import tqdm
-from torch.utils.data import Dataset, Sampler
+from torch.utils.data import Dataset, Sampler, Subset
 from pathlib import Path
 
 from src.signal_creation import Samples
@@ -179,7 +179,7 @@ def set_dataset_filename(system_model_params: SystemModelParams, samples_size: f
             f"_{system_model_params.field_type}_field_"
             f"{system_model_params.signal_type}_"
             + f"{system_model_params.signal_nature}_{samples_size}_M={M}_"
-            + f"N={system_model_params.N}_T={system_model_params.T}_"
+            + f"N={system_model_params.N}_array_geometry={system_model_params.array_form}_"
             + f"eta={system_model_params.eta}_sv_noise_var{system_model_params.sv_noise_var}_"
             + f"bias={system_model_params.bias}"
             + ".h5"
@@ -315,8 +315,15 @@ class SameLengthBatchSampler(Sampler):
 
     def _create_batches(self):
         length_to_indices = {}
+
+        # Check if the data_source is a Subset (from random_split) or the original Dataset
+        is_subset = isinstance(self.data_source, Subset)
+        dataset_to_query = self.data_source.dataset if is_subset else self.data_source
+
         for idx in range(len(self.data_source)):
-            source_num, _ = self.data_source.get_metadata(idx)
+            original_idx = self.data_source.indices[idx] if is_subset else idx
+
+            source_num, _ = dataset_to_query.get_metadata(original_idx)
             if source_num not in length_to_indices:
                 length_to_indices[source_num] = []
             length_to_indices[source_num].append(idx)

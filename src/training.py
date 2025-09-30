@@ -35,7 +35,7 @@ import torch.optim as optim
 from datetime import datetime
 from tqdm import tqdm
 from torch.optim import lr_scheduler
-from sklearn.model_selection import train_test_split
+from torch.utils.data import random_split, Dataset
 import math
 
 # internal imports
@@ -234,7 +234,7 @@ class TrainingParams(object):
         return self
 
 
-    def set_training_dataset(self, train_dataset: list):
+    def set_training_dataset(self, train_dataset):
         """
         Sets the training dataset for training.
 
@@ -247,11 +247,10 @@ class TrainingParams(object):
         self
         """
         # Divide into training and validation datasets
-        train_dataset, valid_dataset = train_test_split(
-            train_dataset, test_size=0.1, shuffle=True
-        )
-        print("Training DataSet size", len(train_dataset))
-        print("Validation DataSet size", len(valid_dataset))
+        train_size = int(0.9 * len(train_dataset))
+        valid_size = len(train_dataset) - train_size
+
+        train_dataset, valid_dataset = random_split(train_dataset, [train_size, valid_size])
 
         # init sampler
         batch_sampler_train = SameLengthBatchSampler(train_dataset, batch_size=self.batch_size)
