@@ -7,7 +7,7 @@ from src.methods_pack.esprit import ESPRIT
 from src.metrics.criterions import set_criterions, RMSPELoss
 
 
-class SparseCovADMMUnfold(ParentModel):
+class DUNCS(ParentModel):
     def __init__(self, system_model: SystemModel, criterion, num_iterations: int, subspace_method: str, mu=1, rho=1):
         super().__init__(system_model, criterion)
 
@@ -135,7 +135,6 @@ class SparseCovADMMUnfold(ParentModel):
     @staticmethod
     def get_model_based_method(method_name: str, system_model: SystemModel):
         """
-        TODO: Remove from here...
         Parameters
         ----------
         method_name(str): the method to use - music_1d, music_2d, root_music, esprit...

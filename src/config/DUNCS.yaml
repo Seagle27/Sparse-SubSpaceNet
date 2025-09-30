@@ -20,22 +20,26 @@ admm_params:
 
 
 model:
-  model_type: "SparseNet"
+  model_type: "DUNCS"
   model_params:
-    tau: 8
-    diff_method: "esprit"
+    num_iterations: 20
+    subspace_method: "esprit"
+    criterion: "rmspe"    # admm_objective, rmspe
+    mu: ${admm_params.mu}   # pulled from top-level admm_params
+    rho: ${admm_params.rho}  # pulled from top-level admm_params
+
 
 training:
-  samples_size: 20480
+  samples_size: 7000
   train_test_ratio: 0.1
-  epochs: 160
-  batch_size: 256
+  epochs: 90
+  batch_size: 128
   optimizer: "AdamW"
   learning_rate: 5e-4
-  weight_decay: 2e-5
-  step_size: 50
+  weight_decay: 1e-5
+  step_size: 40
   gamma: 0.5
-  scheduler: "CustomLR"   # ReduceLROnPlateau, StepLR
+  scheduler: "ReduceLROnPlateau"   # ReduceLROnPlateau
   training_objective: "angle"
   balance_factor: 1.0
   true_doa_train: null
@@ -43,17 +47,22 @@ training:
   true_doa_test: null
   true_range_test: null
 
-
 evaluation:
-  criterion: [rmspe]
+  criterion: [rmspe]                # [rmspe, admm_objective]
   balance_factor: 1.0
-  covariance_reconstruction: "averaging"    # [averaging, admm, admm_cvxpy]
+  covariance_reconstruction: "admm"    # [averaging, admm, admm_cvxpy]
   admm_iterations: [20, 500]
+#  models:
+#    SparseNet:
+#      tau: 8
+#      diff_method: "esprit"
   models:
-    SparseNet:
-      tau: 8
-      diff_method: "esprit"
-  augmented_methods: []
+    DUNCS:
+      num_iterations: 20
+      subspace_method: "esprit"
+      criterion: "rmspe"    # admm_objective, rmspe
+      mu: ${admm_params.mu}   # pulled from top-level admm_params
+      rho: ${admm_params.rho}  # pulled from top-level admm_params
   subspace_methods: ["esprit"]
 
 commands:

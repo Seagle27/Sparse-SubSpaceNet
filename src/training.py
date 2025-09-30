@@ -133,7 +133,6 @@ class TrainingParams(object):
         self.epochs = epochs
         return self
 
-    # TODO: add option to get a Model instance also
     def set_model(self, model_gen: ModelGenerator = None):
         """
         Sets the model for training.
@@ -423,12 +422,8 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     total_batches = len(training_params.train_dataset)
     total_iterations = training_params.epochs * total_batches  # Total number of batches across all epochs
     # torch.autograd.set_detect_anomaly(True)
-    max_norm = 3
 
-    clip_count = 0
-    step_count = 0
     # early = EarlyStopping(mode="min", patience=15, min_delta=1e-4, restore_best=True)
-
     # Initialize tqdm once for the entire training process
     with tqdm(total=total_iterations, desc="Total Training Progress", unit="batch") as pbar:
         for epoch in range(training_params.epochs):
@@ -460,14 +455,6 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
 
                 try:
                     loss.backward()  # retain_graph=True
-                    # total_norm = torch.norm(
-                    #     torch.stack([p.grad.detach().norm(2) for p in model.parameters() if p.grad is not None]),
-                    #     2
-                    # ).item()
-
-                    # if total_norm > max_norm:
-                    #     clip_count += 1
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm)
                 except RuntimeError as r:
                     print(f"linalg error: \n{r}")
 
@@ -477,12 +464,7 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
                     if isinstance(training_params.scheduler, (lr_scheduler.OneCycleLR, lr_scheduler.SequentialLR)):
                         training_params.scheduler.step()
 
-                step_count += 1
                 pbar.update(1)
-                if step_count % 200 == 0:
-                    print(f"Clipping occurred in {clip_count} out of {step_count} steps")
-                    clip_count = 0
-                    step_count = 0
 
             ####################################################################################
             epoch_train_loss /= train_length
@@ -543,8 +525,6 @@ def train_model(training_params: TrainingParams, checkpoint_path=None) -> dict:
     torch.save(model.state_dict(), checkpoint_path / model.get_model_file_name())
     res = {"model": model, "loss_train_list": loss_train_list, "loss_valid_list": loss_valid_list,
            "reg_loss_train_list": reg_loss_train_list}
-    # print(f"Clipping occurred in {clip_count} out of {step_count} steps "
-    #       f"({100.0 * clip_count / step_count:.2f}% of the time).")
     if len(acc_train_list) > 0 and len(acc_valid_list) > 0:
         res["acc_train_list"] = acc_train_list
         res["acc_valid_list"] = acc_valid_list

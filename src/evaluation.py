@@ -343,26 +343,6 @@ def evaluate(
         cov_recon_method='sample',
         cov_recon_params: dict = None,
         admm_iterations: list = None):
-    """
-    TODO: Update docs
-    Wrapper function for model and algorithm evaluations.
-
-    Parameters:
-        generic_test_dataset (list): Test dataset for generic subspace methods.
-        criterions List[(nn.Module)]: Loss criterion for (DNN) model evaluation.
-        system_model: instance of SystemModel.
-        figures (dict): Dictionary to store figures.
-        plot_spec (bool, optional): Whether to plot spectrums. Defaults to True.
-        models (dict): dict that contains the models to evluate and their parameters.
-        augmented_methods (list, optional): List of augmented methods for evaluation.
-            Defaults to None.
-        subspace_methods (list, optional): List of subspace methods for evaluation.
-            Defaults to None.
-
-    Returns:
-        None
-    """
-    # TODO: FIX and cleanup augmented methods
     if cov_recon_method == 'admm':
         results = admm_evaluation(generic_test_dataset, criterions, system_model, model_tmp, subspace_methods,
                                   cov_recon_method, cov_recon_params, admm_iterations, models=models)
@@ -409,7 +389,7 @@ def evaluate(
                         algorithm += "(SPS)"
                     print(f"{algorithm} evaluation time: {time.time() - start}")
                     res[algorithm] = loss
-    results[criterions[0].__class__.__name__]['crb_sncr'] = evaluate_crb(generic_test_dataset, system_model)
+    # results[criterions[0].__class__.__name__]['crb_sncr'] = evaluate_crb(generic_test_dataset, system_model)
 
     for crit_name, method_dict in results.items():
         print(f"\n=== Results for {crit_name} ===")
@@ -432,7 +412,7 @@ def admm_evaluation(generic_test_dataset: DataLoader,
     eval_models = [model] if model is not None else []
     if models:
         for model_name, params in models.items():
-            if model_name == "LearnedADMM":
+            if model_name == "DUNCS":
                 eval_models.append(get_model(model_name, params, system_model))
 
     if admm_iterations is None:

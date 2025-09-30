@@ -15,9 +15,10 @@ class SteeringVectorGenerator:
         self.array = array
         self.params = params
         self.dist_array_elems = dist_array_elems
+        dist = dist_array_elems[params.signal_type]
         print("Initializing Steering Vector Generator with eta={}".format(self.params.eta))
         self._uniform_bias = np.random.uniform(-self.params.bias, self.params.bias, size=1)
-        self._mis_distance = np.random.uniform(-self.params.eta, self.params.eta, size=self.params.N)
+        self._mis_distance = np.random.uniform(-self.params.eta * dist, self.params.eta * dist, size=self.params.N)
 
 
     def generate(self, theta, *, distance=None, f=1, nominal=False,

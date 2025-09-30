@@ -21,7 +21,7 @@ from src.models_pack.deep_augmented_music import DeepAugmentedMUSIC
 from src.models_pack.deep_cnn import DeepCNN
 from src.models_pack.deep_root_music import DeepRootMUSIC
 from src.models_pack.sparse_net import SparseNet
-from src.models_pack.sparse_cov_admm_unfold import SparseCovADMMUnfold
+from src.models_pack.sparse_cov_admm_unfold import DUNCS
 from src.config.simulation_config import SystemModelParams
 from src.utils import device
 
@@ -139,8 +139,8 @@ class ModelGenerator(object):
             self.__set_transmusic()
         elif self.model_type.startswith("SparseNet"):
             self.__set_sparse_net()
-        elif self.model_type.startswith("LearnedADMM"):
-            self.__set_learned_admm()
+        elif self.model_type.startswith("DUNCS"):
+            self.__set_duncs()
         else:
             raise Exception(f"ModelGenerator.set_model: Model type {self.model_type} is not defined")
 
@@ -203,8 +203,8 @@ class ModelGenerator(object):
     def __set_sparse_net(self):
         self.model = SparseNet(system_model=self.system_model, **self.model_params)
 
-    def __set_learned_admm(self):
-        self.model = SparseCovADMMUnfold(system_model=self.system_model, **self.model_params)
+    def __set_duncs(self):
+        self.model = DUNCS(system_model=self.system_model, **self.model_params)
 
     def __verify_model_params(self, model_params):
         """

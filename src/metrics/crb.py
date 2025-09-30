@@ -84,7 +84,8 @@ def calculate_sncr_crb(
     return_per_angle: bool = True,
 ):
     """
-    SNCR-CRB computed *exactly as in the paper* (Eq. 33):
+    SNCR-CRB as derived in "Structured Nyquist Correlation Reconstruction for
+                            DOA Estimation With Sparse Arrays"
 
       F = L * [vec(∂Ryy/∂β)]^H * ( S^T ⊗ S ) * [vec(∂Ryy/∂β)]
       S = Φ^T ( Φ Ryy Φ^H )^{-1} Φ,   Ryy = A diag(p) A^H + σ^2 I
@@ -94,7 +95,7 @@ def calculate_sncr_crb(
 
     Notes:
       * All large Kroneckers are formed explicitly, as in the paper.
-      * Inversion of (Φ Ryy Φ^H) is done via Cholesky solve (numerically stable but exact inverse).
+      * Inversion of (Φ Ryy Φ^H) is done via Cholesky solve.
       * dtype is hard-coded to complex128, real parts are kept where theory dictates.
     """
     device = sparse_array.device if isinstance(sparse_array, torch.Tensor) else (
@@ -105,7 +106,6 @@ def calculate_sncr_crb(
     M = Sidx.numel()
     U = int(Sidx.max().item() + 1)  # presumed contiguous ULA grid 0..max(S)
 
-    # Φ selection (M x U)
     Phi = torch.zeros(M, U, dtype=torch.float64, device=device)
     Phi[torch.arange(M, device=device), Sidx] = 1.0
     Phi_c = Phi.to(dtype_c)
@@ -124,7 +124,7 @@ def calculate_sncr_crb(
     A = torch.exp(1j * phase).to(dtype_c)                         # (B,U,K)
     dA = ((-1j * phase_const) * u.view(1, U, 1) * cos_t.view(B, 1, K)).to(dtype_c) * A
 
-    # --- stochastic powers from SNR: p_k = (SNR_lin)*σ^2  (|a|=1 so no taper correction)
+    # --- stochastic powers from SNR: p_k = (SNR_lin)*σ^2
     snr_lin = 10.0 ** (snr_db_t / 10.0)         # (B,K)
     p = (snr_lin * float(sigma2)).to(torch.float64)  # (B,K)
     p_c = p.to(dtype_c)
