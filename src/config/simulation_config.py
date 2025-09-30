@@ -47,19 +47,11 @@ class SystemModelParams:
                 self.N = int(m_mra.group(1))
 
             else:
-                # Match coprime: 'coprime_M_N' → N = M + N - 1
-                m_coprime = re.match(r"^coprime_(\d+)_(\d+)$", self.array_form)
-                if m_coprime:
-                    p = int(m_coprime.group(1))
-                    q = int(m_coprime.group(2))
-                    self.N = p + q - 1
-
-                else:
-                    # No inference rule applies
-                    raise ValueError(
-                        f"Cannot infer N from array_form='{self.array_form}'. "
-                        "Please specify 'N' explicitly in your config."
-                    )
+                # No inference rule applies
+                raise ValueError(
+                    f"Cannot infer N from array_form='{self.array_form}'. "
+                    "Please specify 'N' explicitly in your config."
+                )
 
 
 @dataclass
