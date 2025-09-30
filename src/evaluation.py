@@ -11,12 +11,9 @@ from typing import List
 # Internal imports
 from src.utils import *
 from src.metrics.criterions import RMSPELoss, ADMMObjective
-from src.methods import MVDR
 from src.methods_pack.music import MUSIC
-from src.methods_pack.root_music import RootMusic
 from src.methods_pack.esprit import ESPRIT
-from src.methods_pack.mle import MLE
-from src.models import (ModelGenerator, SubspaceNet, get_model)
+from src.models import SubspaceNet, get_model
 from src.plotting import plot_spectrum
 from src.system_model import SystemModel
 from src.methods_pack.cov_reconstruct import CovReconstructor, get_cov_reconstruction_method, sample_covariance
@@ -40,8 +37,6 @@ def get_model_based_method(method_name: str, system_model: SystemModel):
         return MUSIC(system_model=system_model, estimation_parameter="angle")
     if method_name.lower().endswith("2d-music"):
         return MUSIC(system_model=system_model, estimation_parameter="angle, range")
-    if method_name.lower() == "root_music":
-        return RootMusic(system_model)
     if method_name.lower().endswith("esprit"):
         return ESPRIT(system_model)
 
@@ -113,7 +108,7 @@ def evaluate_augmented_model(
         dataset: The evaluation dataset.
         system_model (SystemModel): The system model for the hybrid algorithm.
         criterion: The loss criterion for evaluation. Defaults to RMSPE.
-        algorithm (str): The hybrid algorithm to use (e.g., "music", "mvdr", "esprit"). Defaults to "music".
+        algorithm (str): The hybrid algorithm to use (e.g., "music", "esprit"). Defaults to "music".
         plot_spec (bool): Whether to plot the spectrum for the hybrid algorithm. Defaults to False.
         figures (dict): Dictionary containing figure objects for plotting. Defaults to None.
 
@@ -134,10 +129,8 @@ def evaluate_augmented_model(
     model.eval()
     # Initialize instances of subspace methods
     methods = {
-        "mvdr": MVDR(system_model),
         "music": MUSIC(system_model, estimation_parameter="angle"),
         "esprit": ESPRIT(system_model),
-        "r-music": RootMusic(system_model),
         "music_2D": MUSIC(system_model, estimation_parameter="angle, range")
     }
     # If algorithm is not in methods
@@ -176,7 +169,7 @@ def evaluate_augmented_model(
                 hybrid_loss.append(loss)
             else:
                 hybrid_loss.append(0)
-            # Plot spectrum, if algorithm is "music" or "mvdr"
+            # Plot spectrum, if algorithm is "music"
             if not algorithm.startswith("esprit"):
                 if plot_spec and i == len(dataset.dataset) - 1:
                     predictions, spectrum = method_output[0], method_output[1]
@@ -205,7 +198,7 @@ def evaluate_model_based(
         dataset (DataLoader): The evaluation dataset.
         system_model (SystemModel): The system model for the algorithms.
         criterion (nn.Module): The loss criterion for evaluation. Defaults to RMSPE.
-        algorithm (str): The algorithm to use (e.g., "music", "mvdr", "esprit", "r-music").
+        algorithm (str): The algorithm to use (e.g., "music", "esprit", "r-music").
         cov_recon (CovReconstructor) : The method to use for the covariance matrix reconstruction
 
     Returns:
@@ -337,34 +330,6 @@ def evaluate_crb(dataset: DataLoader,
     else:
         print("CRB for this scenario isn't supported yet")
     return
-
-
-def evaluate_mle(dataset: list, system_model: SystemModel, criterion):
-    """
-    Evaluate the Maximum Likelihood Estimation (MLE) algorithm on a given dataset.
-
-    Args:
-        dataset (list): The evaluation dataset.
-        system_model (SystemModel): The system model for the MLE algorithm.
-
-    Returns:
-        float: The average evaluation loss.
-    """
-    # initialize mle instance
-    mle = MLE(system_model)
-    # Initialize parameters for evaluation
-    loss_list = []
-    for i, data in enumerate(dataset):
-        X, labels = data
-        Rx = calculate_covariance_tensor(X, method="simple").to(device)
-        angles = labels[:, :labels.shape[-1] // 2].to(device)
-        distances = labels[:, labels.shape[-1] // 2:].to(device)
-        # Apply MLE algorithm
-        pred_angle, pred_distance = mle(Rx)
-        # Calculate loss criterion
-        loss = criterion(pred_angle.to(device), angles, pred_distance.to(device), distances)
-        loss_list.append(loss.item())
-    return {"Overall": np.mean(loss_list)}
 
 
 def evaluate(

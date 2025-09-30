@@ -3,7 +3,6 @@ from src.models_pack.parent_model import ParentModel
 from src.system_model import SystemModel
 from src.utils import *
 from src.methods_pack.music import MUSIC
-from src.methods_pack.root_music import RootMusic
 from src.methods_pack.esprit import ESPRIT
 from src.metrics.criterions import set_criterions, RMSPELoss
 
@@ -150,8 +149,6 @@ class SparseCovADMMUnfold(ParentModel):
             return MUSIC(system_model=system_model, estimation_parameter="angle")
         if method_name.lower().endswith("2d-music"):
             return MUSIC(system_model=system_model, estimation_parameter="angle, range")
-        if method_name.lower() == "root_music":
-            return RootMusic(system_model)
         if method_name.lower().endswith("esprit"):
             return ESPRIT(system_model)
 

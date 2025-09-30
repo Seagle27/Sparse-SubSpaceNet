@@ -11,7 +11,7 @@ Edited: 29/06/23
 Purpose
 ----------
 This module provides functions for plotting subspace methods spectrums,
-like and RootMUSIC, MUSIC, and also beam patterns of MVDR.
+like RootMUSIC and MUSIC.
  
 Functions:
 ----------
@@ -23,8 +23,6 @@ plot_music_spectrum(system_model, figures: dict, spectrum: np.ndarray, algorithm
     Plot the MUSIC spectrum.
 plot_root_music_spectrum(roots: np.ndarray, predictions: np.ndarray,
     true_DOA: np.ndarray, algorithm: str): Plot the Root-MUSIC spectrum.
-plot_mvdr_spectrum(system_model, figures: dict, spectrum: np.ndarray,
-    true_DOA: np.ndarray, algorithm: str): Plot the MVDR spectrum.
 initialize_figures(void): Generates template dictionary containing figure objects for plotting multiple spectrums.
 
 
@@ -38,7 +36,7 @@ import numpy as np
 import torch
 from typing import Dict
 
-from src.methods import MUSIC, RootMUSIC, MVDR
+from src.methods import MUSIC
 from src.utils import R2D
 from src.utils import plot_styles, parse_loss_results_for_plotting
 
@@ -68,10 +66,6 @@ def plot_spectrum(predictions: np.ndarray, true_DOA: np.ndarray, system_model=No
     # Plot MUSIC spectrums
     if "music" in algorithm.lower() and not ("r-music" in algorithm.lower()):
         plot_music_spectrum(system_model, figures, spectrum, algorithm)
-    elif "mvdr" in algorithm.lower():
-        plot_mvdr_spectrum(system_model, figures, spectrum, true_DOA, algorithm)
-    elif "r-music" in algorithm.lower():
-        plot_root_music_spectrum(roots, predictions, true_DOA, algorithm)
     else:
         raise Exception(f"evaluate_augmented_model: Algorithm {algorithm} is not supported.")
 
@@ -111,42 +105,6 @@ def plot_music_spectrum(system_model, figures: dict, spectrum: np.ndarray, algor
         figures["music"]["ax"].plot(angels_grid, spectrum / np.max(spectrum), label=algorithm)
     # Set legend
     figures["music"]["ax"].legend()
-
-
-def plot_mvdr_spectrum(system_model, figures: dict, spectrum: np.ndarray,
-                       true_DOA: np.ndarray, algorithm: str):
-    """
-    Plot the MVDR spectrum.
-
-    Args:
-        system_model (SystemModel): The system model.
-        figures (dict): Dictionary containing figure objects for plotting.
-        spectrum (np.ndarray): The spectrum values.
-        algorithm (str): The algorithm used.
-        true_DOA (np.ndarray): The true DOA values.
-
-    """
-    # Initialize MVDR instance
-    mvdr = MVDR(system_model)
-    # Initialize plot for spectrum
-    if figures["mvdr"]["fig"] == None:
-        plt.style.use('default')
-        figures["mvdr"]["fig"] = plt.figure(figsize=(8, 6))
-    if figures["mvdr"]["ax"] == None:
-        figures["mvdr"]["ax"] = figures["mvdr"]["fig"].add_subplot(111, polar=True)
-    # Set axis location and limits
-    figures["mvdr"]["ax"].set_theta_zero_location('N')
-    figures["mvdr"]["ax"].set_theta_direction(-1)
-    figures["mvdr"]["ax"].set_thetamin(-90)
-    figures["mvdr"]["ax"].set_thetamax(90)
-    figures["mvdr"]["ax"].set_ylim([0.0, 1.01])
-    # Plot normalized mvdr beam pattern
-    figures["mvdr"]["ax"].plot(mvdr._angels, spectrum / np.max(spectrum), label=algorithm)
-    # marker in "x" true DoA's
-    for doa in true_DOA[0]:
-        figures["mvdr"]["ax"].plot([doa * np.pi / 180], [1], marker='x', color="r", markersize=14)
-    # Set leagend
-    figures["mvdr"]["ax"].legend()
 
 
 def plot_root_music_spectrum(roots: np.ndarray, predictions: np.ndarray,
@@ -192,8 +150,7 @@ def initialize_figures():
   """
     figures = {"music": {"fig": None, "ax": None, "norm factor": None},
                "r-music": {"fig": None, "ax": None},
-               "esprit": {"fig": None, "ax": None},
-               "mvdr": {"fig": None, "ax": None, "norm factor": None}}
+               "esprit": {"fig": None, "ax": None}}
     return figures
 
 
