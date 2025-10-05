@@ -9,7 +9,6 @@ system_model:
   field_type: "Far"
   signal_nature: "non-coherent"
   array_form: "mra-7"
-  antenna_pattern: false
   doa_range: [-70, 70]
   min_gap: 5
 
